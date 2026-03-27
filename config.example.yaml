@@ -76,6 +76,21 @@ briefing:
   # Include noise count? (e.g., "14 items archived")
   show_noise_count: true
 
+# ── Obsidian vault output ────────────────────────────────
+# When vault_path is set, a Markdown daily note is written to the vault
+# on every run. Leave vault_path commented out to disable this feature.
+#
+# TESTING: Start with a path inside the project to verify the output
+# format before pointing it at your real vault:
+#   vault_path: "data/obsidian-test"
+#
+# PRODUCTION: Change to your real vault path once you're happy with it:
+#   vault_path: "~/syncthing/data/Notes"
+obsidian:
+  # vault_path: "data/obsidian-test"       # ← uncomment to enable (test path)
+  # vault_path: "~/syncthing/data/Notes"   # ← switch to this for real vault
+  briefing_folder: "inbox-briefings"       # subfolder created inside the vault
+
 # ── Draft reply settings ────────────────────────────────
 drafts:
   enabled: true                          # Set false to disable draft creation

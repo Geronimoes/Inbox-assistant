@@ -307,7 +307,7 @@ def main():
             composer = DraftComposer(llm, style_profile=style_profile)
             drafts = composer.compose_batch(new_emails, classifications)
 
-    # ── 6. Generate briefing ─────────────────────────────
+    # ── 7. Generate briefing ─────────────────────────────
     print("\n── Generating briefing...")
     briefing_config = config.get("briefing", {})
     generator = BriefingGenerator(
@@ -318,18 +318,37 @@ def main():
     subject, html_body = generator.generate(
         classifications, drafts, attachment_summaries=attachment_summaries
     )
+    markdown_body = generator.generate_markdown(
+        classifications, drafts, attachment_summaries=attachment_summaries
+    )
 
-    # ── 7. Deliver ───────────────────────────────────────
+    # ── 8. Write Obsidian note ────────────────────────────
+    obsidian_cfg = config.get("obsidian", {})
+    vault_path = obsidian_cfg.get("vault_path", "")
+    if vault_path:
+        briefing_folder = obsidian_cfg.get("briefing_folder", "inbox-briefings")
+        try:
+            note_path = generator.write_to_obsidian(
+                markdown_body, vault_path, briefing_folder
+            )
+            print(f"  Obsidian note written: {note_path}")
+        except OSError as e:
+            print(f"  ⚠ Could not write Obsidian note: {e}")
+
+    # ── 9. Deliver ───────────────────────────────────────
     if args.dry_run:
         print(f"\n── DRY RUN — would send briefing: {subject}")
         print(f"  Would create {len(drafts)} drafts")
         print(f"  Would archive {len(noise)} noise items")
 
-        # Save preview
+        # Save HTML and Markdown previews
         preview_path = project_root / "data" / "preview.html"
         preview_path.parent.mkdir(parents=True, exist_ok=True)
         preview_path.write_text(html_body)
-        print(f"\n  Preview saved to: {preview_path}")
+        md_preview_path = project_root / "data" / "preview.md"
+        md_preview_path.write_text(markdown_body)
+        print(f"\n  HTML preview:     {preview_path}")
+        print(f"  Markdown preview: {md_preview_path}")
 
         # Print classification details
         print("\n── Classification details:")

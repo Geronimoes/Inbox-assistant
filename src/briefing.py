@@ -1,11 +1,19 @@
 """
 Morning briefing generator.
 
-Takes classified emails and draft replies, and produces a formatted
-HTML email that serves as the daily inbox briefing.
+Takes classified emails and draft replies, and produces:
+  - An HTML email (for Gmail send / fallback delivery)
+  - A Markdown daily note (for Obsidian vault, synced via Syncthing)
+
+The Obsidian note is written to:
+    {vault_path}/{briefing_folder}/YYYY-MM-DD.md
+
+Configure vault_path in config.yaml under obsidian.vault_path.
+If not configured, Obsidian output is silently skipped.
 """
 
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 
@@ -217,3 +225,174 @@ class BriefingGenerator:
 
         html += "</div>"
         return html
+
+    # ── Obsidian / Markdown output ────────────────────────────────────────────
+
+    def generate_markdown(
+        self,
+        classifications: list[dict],
+        drafts: list[dict],
+        attachment_summaries: dict | None = None,
+    ) -> str:
+        """Generate an Obsidian-compatible Markdown daily note.
+
+        Produces a note with YAML frontmatter (searchable in Obsidian) and
+        clearly structured sections for each email category. Draft availability
+        and attachment summaries are shown inline.
+
+        Returns the full Markdown string.
+        """
+        now = datetime.now(self.timezone)
+        date_str = now.strftime("%A %-d %B %Y")
+        date_iso = now.strftime("%Y-%m-%d")
+
+        urgent = [c for c in classifications if c["category"] == "URGENT"]
+        action = [c for c in classifications if c["category"] == "ACTION"]
+        fyi    = [c for c in classifications if c["category"] == "FYI"]
+        noise  = [c for c in classifications if c["category"] == "NOISE"]
+
+        draft_lookup = {d["email_id"]: d for d in drafts}
+        att_lookup = attachment_summaries or {}
+
+        lines: list[str] = []
+
+        # ── YAML frontmatter ──────────────────────────────────────────────────
+        lines += [
+            "---",
+            f"date: {date_iso}",
+            "tags:",
+            "  - inbox-briefing",
+            f"urgent: {len(urgent)}",
+            f"action: {len(action)}",
+            f"fyi: {len(fyi)}",
+            f"noise: {len(noise)}",
+            "---",
+            "",
+        ]
+
+        # ── Title and summary ─────────────────────────────────────────────────
+        lines += [
+            f"# Inbox Briefing — {date_str}",
+            "",
+            f"{len(urgent)} urgent · {len(action)} to reply · "
+            f"{len(fyi)} FYI · {len(noise)} noise",
+            "",
+        ]
+
+        # ── Urgent section ────────────────────────────────────────────────────
+        if urgent:
+            lines += ["## ⚡ Needs Attention Today", ""]
+            for item in urgent:
+                lines += self._md_item(item, draft_lookup, att_lookup)
+        else:
+            lines += ["## ⚡ Needs Attention Today", "", "_Nothing urgent._", ""]
+
+        # ── Action section ────────────────────────────────────────────────────
+        if action:
+            lines += ["## 📋 Reply Needed", ""]
+            for item in action:
+                lines += self._md_item(item, draft_lookup, att_lookup)
+        else:
+            lines += ["## 📋 Reply Needed", "", "_Nothing to reply to._", ""]
+
+        # ── FYI section ───────────────────────────────────────────────────────
+        if fyi:
+            lines += ["## 🔵 For Your Information", ""]
+            for item in fyi[:self.max_fyi_items]:
+                summary = item.get("summary", "")
+                lines.append(f"- {summary}")
+            if len(fyi) > self.max_fyi_items:
+                lines.append(f"- _...and {len(fyi) - self.max_fyi_items} more_")
+            lines.append("")
+
+        # ── Noise summary ─────────────────────────────────────────────────────
+        if noise and self.show_noise_count:
+            lines += [
+                "## ⚪ Noise",
+                "",
+                f"_{len(noise)} items — newsletters, notifications, promotions._",
+                "",
+            ]
+
+        return "\n".join(lines)
+
+    def _md_item(
+        self,
+        item: dict,
+        draft_lookup: dict,
+        att_lookup: dict,
+    ) -> list[str]:
+        """Render a single email item as Markdown lines."""
+        email_id = item.get("email_id", "")
+        summary = item.get("summary", "")
+        action = item.get("suggested_action", "")
+        deadline = item.get("deadline")
+
+        lines = [f"### {summary}", ""]
+        if action:
+            lines.append(f"**Action:** {action}  ")
+        if deadline:
+            lines.append(f"**Deadline:** {deadline}  ")
+        if email_id in draft_lookup:
+            lines.append("✎ *Draft ready in Gmail Drafts*  ")
+
+        # Attachments
+        atts = att_lookup.get(email_id, [])
+        if atts:
+            lines.append("")
+            lines.append("**Attachments:**")
+            icons = {"paper": "📄", "submission": "📝", "form": "📋",
+                     "invoice": "🧾", "calendar": "📅", "document": "📃"}
+            for att in atts:
+                icon = icons.get(att.get("category", ""), "📎")
+                att_summary = att.get("summary", att.get("filename", ""))
+                lines.append(f"- {icon} {att_summary}")
+
+        lines.append("")
+        return lines
+
+    def write_to_obsidian(
+        self,
+        markdown_content: str,
+        vault_path: str | Path,
+        briefing_folder: str = "inbox-briefings",
+        date: datetime | None = None,
+    ) -> Path:
+        """Write the Markdown briefing to the Obsidian vault.
+
+        Writes atomically (to a .tmp file, then renames) to avoid creating
+        a partial file that Syncthing might sync mid-write.
+
+        Args:
+            markdown_content: Output of generate_markdown().
+            vault_path:       Absolute path to the Obsidian vault root.
+            briefing_folder:  Subdirectory inside the vault (default: inbox-briefings).
+            date:             Date for the filename; defaults to today.
+
+        Returns:
+            Path to the written file.
+
+        Raises:
+            OSError: If the vault path doesn't exist or isn't writable.
+        """
+        vault = Path(vault_path).expanduser()
+        if not vault.exists():
+            raise OSError(
+                f"Obsidian vault path does not exist: {vault}\n"
+                f"Check obsidian.vault_path in config.yaml."
+            )
+
+        target_date = date or datetime.now(self.timezone)
+        date_str = target_date.strftime("%Y-%m-%d")
+
+        briefing_dir = vault / briefing_folder
+        briefing_dir.mkdir(parents=True, exist_ok=True)
+
+        dest = briefing_dir / f"{date_str}.md"
+
+        # Atomic write: .tmp → rename, avoids Syncthing partial-sync conflicts
+        tmp = dest.with_suffix(".tmp")
+        tmp.write_text(markdown_content, encoding="utf-8")
+        tmp.replace(dest)
+
+        return dest

@@ -16,6 +16,7 @@ writing-samples/curated/*.md
 dashboard/index.html
 logs/
 data/preview.html
+data/preview.md
 staging/processed/
 
 # Python virtual environments
@@ -32,3 +33,4 @@ __pycache__/
 .DS_Store
 .vscode/
 *.swp
+data/obsidian-test/
