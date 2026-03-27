@@ -1,217 +1,200 @@
 # Setup Guide — Inbox Briefing Assistant
 
-This guide walks you through setting up the system. You can follow it manually
-or ask Claude Code to walk you through it on your VPS.
+This guide reflects the current production setup on the VPS. Follow it if you
+ever need to rebuild from scratch, or use it as a reference.
 
 ---
 
 ## Prerequisites
 
-- A VPS with Python 3.10+ installed
-- A Gmail account (with university mail forwarded to it)
-- A Google Cloud project (you already have this)
-- An Anthropic API key (for Claude classification/drafting)
+- VPS (Hetzner) running Ubuntu, accessible via Tailscale
+- Python 3.12 with a virtualenv at `env/`
+- Gmail account with university mail forwarded via `_UCM-redirect` label
+- Anthropic API key
+- Telegram bot (created via @BotFather)
+- Caddy reverse proxy running in Docker
+- Cloudflare Access protecting the dashboard subdomain
 
 ---
 
-## Step 1: Google Cloud — Enable Gmail API
-
-If you haven't already enabled the Gmail API in your existing Google Cloud project:
-
-1. Go to https://console.cloud.google.com/
-2. Select your project (or create a new one)
-3. Go to **APIs & Services → Library**
-4. Search for **"Gmail API"** and click **Enable**
-5. Go to **APIs & Services → Credentials**
-6. Click **Create Credentials → OAuth 2.0 Client ID**
-   - Application type: **Desktop app** (simplest for a personal VPS tool)
-   - Name: "Inbox Assistant" (or whatever you like)
-7. Download the JSON file — save it as `credentials.json`
-
-### Scopes needed
-
-The system uses these Gmail API scopes:
-
-| Scope | Purpose |
-|-------|---------|
-| `gmail.readonly` | Read emails for triage |
-| `gmail.modify` | Mark emails as read, archive noise |
-| `gmail.compose` | Create draft replies |
-| `gmail.send` | Send the briefing email to yourself |
-
-> **Note:** You can start with just `gmail.readonly` if you want to test
-> the briefing feature first, then add the others later.
-
-### First-time authentication
-
-The first time you run the system, it will open a browser for OAuth consent.
-Since your VPS is headless, you have two options:
-
-**Option A — Run auth locally first:**
-1. Copy `credentials.json` to your local machine
-2. Run `python src/gmail_client.py --auth` locally
-3. This opens a browser, you approve, and it creates `token.json`
-4. Copy `token.json` back to your VPS
-
-**Option B — Use the headless flow:**
-1. Run `python src/gmail_client.py --auth` on your VPS
-2. It will print a URL — open it in your phone/PC browser
-3. Approve access, copy the authorization code back to the terminal
-
----
-
-## Step 2: Anthropic API Key
-
-1. Go to https://console.anthropic.com/
-2. Create an API key (or use an existing one)
-3. Note: This system uses Claude Sonnet for classification (cost-effective)
-   - Typical usage: ~1000 emails/month ≈ $1-3/month in API costs
-
----
-
-## Step 3: Configure the System
-
-1. Copy the config template:
-   ```bash
-   cp config.example.yaml config.yaml
-   ```
-
-2. Edit `config.yaml` with your settings:
-   ```bash
-   nano config.yaml
-   # Or ask Claude Code: "help me fill in config.yaml"
-   ```
-
-3. Place your credentials:
-   ```bash
-   # Put your Google OAuth credentials in the project root
-   cp /path/to/credentials.json ~/inbox-assistant/credentials.json
-   ```
-
----
-
-## Step 4: Install Dependencies
+## Step 1: Clone and set up Python environment
 
 ```bash
-cd ~/inbox-assistant
+cd ~/projects
+git clone git@github.com:Geronimoes/Inbox-assistant.git inbox-assistant
+cd inbox-assistant
+python3 -m venv env
+source env/bin/activate
 pip install -r requirements.txt
 ```
 
 ---
 
-## Step 5: First Run (Test)
+## Step 2: Configure
 
 ```bash
-# Test Gmail connection
+cp config.example.yaml config.yaml
+nano config.yaml   # fill in all values (see below)
+```
+
+Key config values to set:
+
+| Section | Key | Value |
+|---------|-----|-------|
+| `gmail.your_email` | Your Gmail address | `jeroenm@gmail.com` |
+| `gmail.scan_labels` | Label for UCM-forwarded mail | `_UCM-redirect` |
+| `briefing.send_to` | Where to receive briefings | UCM address |
+| `briefing.timezone` | Your timezone | `Europe/Amsterdam` |
+| `obsidian.vault_path` | Path to Obsidian vault | `~/syncthing/data/Notes` |
+| `llm.providers.anthropic.api_key` | Anthropic key | `sk-ant-...` |
+| `notifications.telegram.bot_token` | From @BotFather | `123456:ABC...` |
+| `notifications.telegram.chat_id` | From @userinfobot | `987654321` |
+| `dashboard.output_path` | Caddy static files dir | `/home/jeroen/caddy/sites/inbox-dashboard/index.html` |
+| `drafts.save_to_gmail` | Skip Gmail drafts (use Obsidian instead) | `false` |
+
+---
+
+## Step 3: Gmail OAuth credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create or select a project → **APIs & Services → Library → Gmail API → Enable**
+3. **Credentials → Create → OAuth 2.0 Client ID** — type: **Desktop app**
+4. Download as `credentials.json` and place it in the project root
+
+### Authenticate (headless VPS)
+
+Since the VPS has no browser, use SSH port forwarding via Tailscale:
+
+**On your local machine** (PowerShell):
+```powershell
+ssh -L 8080:localhost:8080 jeroen@100.103.152.23 -i .\.ssh\hetzner_key
+```
+
+**On the VPS:**
+```bash
+source env/bin/activate
+python src/gmail_client.py --auth --headless
+```
+
+Visit the printed Google URL in your local browser. After approving, your browser
+is redirected to `localhost:8080` — the tunnel delivers this to the VPS.
+`token.json` is saved automatically.
+
+**Re-authentication** (when token expires, usually after 6 months):
+```bash
+python src/gmail_client.py --auth --headless
+```
+
+---
+
+## Step 4: Test each component
+
+```bash
+source env/bin/activate
+
+# Gmail connection
 python src/gmail_client.py --test
 
-# Run a single triage (dry run — no emails sent, no drafts created)
+# Telegram notification
+python src/notifier.py --test
+
+# Full dry run (no emails sent, no state saved)
 python src/fetch_and_triage.py --dry-run
 
-# If that looks good, run for real
-python src/fetch_and_triage.py
+# Check generated Obsidian note
+cat ~/syncthing/data/Notes/inbox-briefings/$(date +%Y-%m-%d).md
 ```
 
 ---
 
-## Step 6: Set Up Cron Jobs
+## Step 5: Install cron jobs
 
 ```bash
-# Install the cron jobs
 bash cron/install.sh
-
-# Or manually add to crontab:
-crontab -e
-
-# Add these lines:
-# Morning briefing at 6:30 AM (adjust timezone!)
-30 6 * * * cd ~/inbox-assistant && python src/fetch_and_triage.py >> logs/briefing.log 2>&1
-
-# Urgent check every 2 hours during working hours (8 AM - 8 PM)
-0 8-20/2 * * * cd ~/inbox-assistant && python src/urgent_check.py >> logs/urgent.log 2>&1
+crontab -l   # verify
 ```
+
+This installs:
+- `06:30` daily — morning briefing
+- Every 2 hrs `08:00–20:00` — urgent check
+- Sunday `02:00` — writing style regeneration
+- Sunday `03:00` — dashboard refresh
 
 ---
 
-## Step 7: Customize
+## Step 6: Dashboard (Caddy)
 
-### Classification categories
+The dashboard is served from `/home/jeroen/caddy/sites/inbox-dashboard/`.
+The `dashboard.output_path` in `config.yaml` writes directly to this directory.
 
-Edit `prompts/classify.md` to adjust how emails are categorized.
-Default categories:
-
-| Category | Description | Action |
-|----------|-------------|--------|
-| 🔴 URGENT | Needs reply today, has deadline | Alert + draft reply |
-| 🟡 ACTION | Needs reply, not time-critical | Draft reply |
-| 🔵 FYI | Worth knowing, no reply needed | Include in briefing |
-| ⚪ NOISE | Newsletters, promos, automated | Archive or skip |
-
-### Personal context
-
-Edit `prompts/classify.md` to add context about your roles:
-
-```markdown
-## Context about the recipient
-
-- Professor at a European university
-- Fields: sociology, anthropology, political science, human geography
-- Teaches undergraduate and graduate courses
-- Supervises PhD students
-- Sits on departmental committees
-- Publishes in academic journals
-- Languages: English (primary), Dutch (some admin correspondence)
-
-## Priority signals
-
-HIGH priority indicators:
-- From PhD students you supervise
-- Journal editors (revisions, decisions)
-- Grant/funding bodies
-- Department head or dean
-- Messages with explicit deadlines
-
-MEDIUM priority:
-- Colleagues about shared projects
-- Conference organizers
-- Teaching assistants
-- IT/admin with action items
-
-LOW priority:
-- Mailing list announcements
-- Library notifications
-- General university newsletters
-- Automated system notifications
+The Caddyfile block (already configured):
+```
+@inbox host inbox.moes.me
+handle @inbox {
+    root * /srv/inbox-dashboard
+    file_server
+    encode gzip
+}
 ```
 
-### Draft reply style
+Protect with Cloudflare Access: Zero Trust → Applications → add `inbox.moes.me`.
 
-Edit `prompts/draft_reply.md` to match your voice. You can:
-- Paste a few example emails you've sent so Claude learns your tone
-- Specify formality levels (more formal for editors, warmer for students)
-- Set language preferences (reply in the language the email was written in)
+---
+
+## Step 7: Writing style profile
+
+Add a few sent emails as plain text files to `writing-samples/curated/`, then:
+
+```bash
+python src/fetch_and_triage.py --regenerate-style
+```
+
+The profile is regenerated automatically every Sunday at 2 AM from then on.
+Drafts will use it on the next run.
+
+---
+
+## Step 8: Retroactive email import
+
+To process emails from the past N hours (useful for first-time setup):
+
+```bash
+# Preview (no state saved, no email sent)
+python src/fetch_and_triage.py --dry-run --hours 336   # 2 weeks
+
+# Real run — classifies, sends one large briefing, saves state
+python src/fetch_and_triage.py --hours 336 --no-drafts
+```
+
+`--no-drafts` skips generating replies for old emails you won't use.
+All processed emails will appear under today's date in `weekly-stats.json`.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| OAuth token expired | Run `python src/gmail_client.py --auth` again |
-| Too many API calls | Increase the `check_interval` in config.yaml |
-| Briefing too long | Adjust `max_fyi_items` in config.yaml |
-| Wrong timezone | Set `timezone` in config.yaml |
-| Missing emails | Check Gmail forwarding rules are working |
+| Symptom | Fix |
+|---------|-----|
+| `Gmail authentication failed` | Run `python src/gmail_client.py --auth --headless` |
+| `Invalid label: _UCM-redirect` | Label name is resolved automatically — check it exists in Gmail |
+| `Telegram API error 404` | Check for trailing spaces in `bot_token` in `config.yaml` |
+| Briefing not arriving | Check `logs/briefing.log`; verify `briefing.send_to` is set |
+| Obsidian note not written | Check `obsidian.vault_path` exists and is writable |
+| Dashboard shows no data | Run a real (non-dry-run) `fetch_and_triage.py` first |
+| Draft replies contain em-dashes | This is a prompt bug — `prompts/draft_reply.md` has a rule against them |
 
 ---
 
-## Upgrading to Direct O365 Access (Phase 2)
+## File locations (quick reference)
 
-If your university IT enables Microsoft Graph API access:
-
-1. Register an app in Azure AD with `Mail.Read` delegated permissions
-2. Swap `gmail_client.py` for `graph_client.py` (same interface)
-3. The rest of the system stays identical — classifier, briefing,
-   drafter all work the same regardless of email source
-
-This is designed as a drop-in replacement, so the upgrade is painless.
+| File | Purpose | Commit? |
+|------|---------|---------|
+| `config.yaml` | All settings and API keys | **Never** |
+| `credentials.json` | Google OAuth client secret | **Never** |
+| `token.json` | Google OAuth token | **Never** |
+| `data/processed.json` | Processed email IDs | **Never** |
+| `data/weekly-stats.json` | Dashboard data | **Never** |
+| `writing-samples/samples/` | BCC-collected sent emails | **Never** |
+| `writing-samples/curated/` | Manually added writing samples | **Never** |
+| `writing-samples/style-profile.md` | Generated style guide | OK to commit |
+| `prompts/*.md` | LLM prompts | OK to commit |
