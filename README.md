@@ -109,6 +109,125 @@ inbox-assistant/
 | Which Gmail label to scan | `gmail.scan_labels` in `config.yaml` |
 | Re-authenticate Gmail | `python src/gmail_client.py --auth --headless` |
 
+## Scripts Reference
+
+All scripts are run from the project root with the virtualenv active
+(`source env/bin/activate`).
+
+### `src/fetch_and_triage.py` — Main orchestrator
+
+The primary entry point. Fetches emails, classifies them, composes drafts,
+generates the briefing, and sends it.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| *(none)* | | | Full production run |
+| `--dry-run` | flag | off | Classify and preview without sending email, saving state, or pinging Telegram. Writes `data/preview.html` and `data/preview.md`. |
+| `--hours N` | int | from config | Override the lookback window (e.g. `--hours 48` for yesterday + today) |
+| `--no-drafts` | flag | off | Skip draft reply generation (saves API cost for large/retroactive runs) |
+| `--regenerate-style` | flag | off | Rebuild `writing-samples/style-profile.md` from the writing corpus, then exit without processing email |
+
+**Examples:**
+```bash
+python src/fetch_and_triage.py --dry-run              # safe preview
+python src/fetch_and_triage.py --dry-run --hours 48   # preview last 2 days
+python src/fetch_and_triage.py --hours 336 --no-drafts  # retroactive 2-week import
+python src/fetch_and_triage.py --regenerate-style     # rebuild style profile
+```
+
+---
+
+### `src/urgent_check.py` — Urgent email checker
+
+Fetches the most recent emails and sends a Telegram alert if any are URGENT.
+Respects quiet hours configured in `config.yaml`. Run by cron every 2 hours.
+
+No flags — designed to run unattended. Exits silently if no urgent email found
+or if quiet hours are active.
+
+---
+
+### `src/gmail_client.py` — Gmail authentication and diagnostics
+
+| Flag | Type | Required? | Description |
+|------|------|-----------|-------------|
+| `--auth` | flag | for first-time setup | Run the OAuth flow to create `token.json` |
+| `--headless` | flag | with `--auth` on VPS | Use local HTTP server on port 8080 (requires SSH tunnel) |
+| `--test` | flag | optional | Fetch 5 recent emails to verify the connection works |
+
+**Examples:**
+```bash
+python src/gmail_client.py --auth --headless   # (re-)authenticate on VPS
+python src/gmail_client.py --test              # verify Gmail API is working
+```
+
+---
+
+### `src/notifier.py` — Telegram notification test
+
+| Flag | Type | Required? | Description |
+|------|------|-----------|-------------|
+| `--test` | flag | yes (only flag) | Send a test message to verify bot token and chat ID |
+
+```bash
+python src/notifier.py --test
+```
+
+---
+
+### `src/llm_client.py` — LLM provider test
+
+| Flag | Type | Required? | Description |
+|------|------|-----------|-------------|
+| `--test` | flag | yes (only useful flag) | Send "Reply with only the word PONG" to each configured provider |
+
+```bash
+python src/llm_client.py --test
+```
+
+---
+
+### `src/dashboard.py` — Dashboard generator
+
+Reads `data/weekly-stats.json` and writes `dashboard/index.html` (or the path
+set in `config.yaml` under `dashboard.output_path`).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--open` | flag | off | Open the generated file in the default browser (local use only) |
+
+```bash
+python src/dashboard.py          # regenerate dashboard
+```
+
+---
+
+### `src/attachment_handler.py` — Attachment processing test
+
+| Flag | Argument | Required? | Description |
+|------|----------|-----------|-------------|
+| `--test-file PATH` | file path | yes (only useful flag) | Process a single file and print the classification result |
+
+```bash
+python src/attachment_handler.py --test-file attachments/other/sample.pdf
+```
+
+---
+
+### `src/feedback_handler.py` — BCC feedback loop test
+
+*(See Roadmap — the automation layer is not yet active.)*
+
+| Flag | Argument | Required? | Description |
+|------|----------|-----------|-------------|
+| `--test-email PATH` | file path | yes (only useful flag) | Process a single feedback JSON file from `staging/feedback/` |
+
+```bash
+python src/feedback_handler.py --test-email staging/feedback/sample.json
+```
+
+---
+
 ## Privacy & Safety
 
 - **Drafts are never sent automatically.** They appear inline in the briefing
