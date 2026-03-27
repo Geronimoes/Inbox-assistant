@@ -1,0 +1,110 @@
+{
+  "name": "Inbox Assistant — Email Ingestion",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "filters": {
+          "labelIds": ["INBOX"],
+          "q": "label:university newer_than:1d"
+        },
+        "options": {
+          "format": "full"
+        },
+        "returnAll": false,
+        "limit": 50
+      },
+      "id": "gmail-fetch",
+      "name": "Fetch University Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [460, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail (Professor)"
+        }
+      },
+      "notes": "CONFIGURE: Change the label filter 'label:university' to match your actual Gmail label for forwarded university mail. Check Gmail settings to find the exact label name."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform Gmail API output to the staging JSON schema\n// expected by the Python triage engine.\n// See n8n/README.md for full schema documentation.\n\nconst items = [];\n\nfor (const item of $input.all()) {\n  const msg = item.json;\n  \n  // Extract headers into a lookup object\n  const headers = {};\n  for (const h of (msg.payload?.headers || [])) {\n    headers[h.name.toLowerCase()] = h.value;\n  }\n  \n  // Recursively extract plain text body from MIME parts\n  function extractBody(payload) {\n    if (payload.mimeType === 'text/plain' && payload.body?.data) {\n      return Buffer.from(payload.body.data, 'base64').toString('utf-8');\n    }\n    for (const part of (payload.parts || [])) {\n      const text = extractBody(part);\n      if (text) return text;\n    }\n    return '';\n  }\n  \n  // Collect attachment metadata (n8n has already saved them if using\n  // a separate Download Attachments step — see README for details)\n  const attachments = [];\n  function collectAttachments(payload) {\n    if (payload.filename && payload.body?.attachmentId) {\n      attachments.push({\n        filename: payload.filename,\n        mime_type: payload.mimeType || 'application/octet-stream',\n        attachment_id: payload.body.attachmentId,\n        // local_path is filled in by the 'Save Attachments' step below.\n        // Leave blank here; the Python script handles missing local_path gracefully.\n        local_path: ''\n      });\n    }\n    for (const part of (payload.parts || [])) {\n      collectAttachments(part);\n    }\n  }\n  collectAttachments(msg.payload || {});\n  \n  const email = {\n    id: msg.id,\n    thread_id: msg.threadId,\n    subject: headers['subject'] || '(no subject)',\n    from: headers['from'] || '',\n    to: headers['to'] || '',\n    date: headers['date'] || '',\n    snippet: msg.snippet || '',\n    body_text: extractBody(msg.payload || '').substring(0, 3000),\n    labels: msg.labelIds || [],\n    attachments: attachments\n  };\n  \n  items.push({ json: email });\n}\n\nreturn items;"
+      },
+      "id": "transform-emails",
+      "name": "Transform to Staging Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "command": "=echo '{{ JSON.stringify($json) }}' > /home/jeroen/projects/inbox-assistant/staging/email-{{ $json.id }}.json",
+        "executeOnce": false
+      },
+      "id": "write-to-staging",
+      "name": "Write to Staging",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "notes": "CONFIGURE: Update the path if your project is not in /home/jeroen/projects/inbox-assistant/"
+    },
+    {
+      "parameters": {
+        "command": "cd /home/jeroen/projects/inbox-assistant && source env/bin/activate && python src/fetch_and_triage.py >> logs/briefing.log 2>&1",
+        "executeOnce": true
+      },
+      "id": "trigger-triage",
+      "name": "Trigger Triage Engine",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1120, 300],
+      "notes": "OPTIONAL: This triggers the Python script immediately after writing to staging. If you prefer to let cron handle it on its schedule, disable this node."
+    }
+  ],
+  "connections": {
+    "Every 30 Minutes": {
+      "main": [
+        [{ "node": "Fetch University Emails", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch University Emails": {
+      "main": [
+        [{ "node": "Transform to Staging Format", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform to Staging Format": {
+      "main": [
+        [{ "node": "Write to Staging", "type": "main", "index": 0 }]
+      ]
+    },
+    "Write to Staging": {
+      "main": [
+        [{ "node": "Trigger Triage Engine", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["inbox-assistant"],
+  "_readme": "Import this workflow in n8n via Settings > Import Workflow. See n8n/README.md for full setup instructions, credential configuration, and how to customise the Gmail label filter."
+}

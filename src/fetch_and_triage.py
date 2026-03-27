@@ -36,6 +36,60 @@ def load_config() -> dict:
     return yaml.safe_load(config_path.read_text())
 
 
+# Required fields in every staging JSON file (must match n8n/README.md schema)
+_REQUIRED_STAGING_FIELDS = {"id", "thread_id", "subject", "from", "to",
+                             "date", "snippet", "body_text"}
+
+
+def load_from_staging(staging_dir: Path) -> list[dict]:
+    """Load email JSON files dropped by n8n into the staging/ directory.
+
+    Returns a list of email dicts (same format as gmail_client._parse_message,
+    plus an optional 'attachments' list added by n8n). Successfully parsed
+    files are moved to staging/processed/ so they are never re-processed.
+
+    If staging/ is empty or contains no valid JSON files, returns [] and the
+    caller falls back to Gmail API fetch.
+    """
+    json_files = sorted(staging_dir.glob("*.json"))
+    if not json_files:
+        return []
+
+    processed_dir = staging_dir / "processed"
+    processed_dir.mkdir(exist_ok=True)
+
+    emails = []
+    for path in json_files:
+        try:
+            email = json.loads(path.read_text())
+        except json.JSONDecodeError as e:
+            print(f"  ⚠ Skipping {path.name}: invalid JSON — {e}")
+            continue
+
+        # Validate required fields — schema must match n8n/README.md
+        missing = _REQUIRED_STAGING_FIELDS - set(email.keys())
+        if missing:
+            print(f"  ⚠ Skipping {path.name}: missing fields: "
+                  f"{', '.join(sorted(missing))}")
+            print(f"    See n8n/README.md for the required JSON schema.")
+            continue
+
+        # Ensure optional fields have safe defaults
+        email.setdefault("labels", [])
+        email.setdefault("attachments", [])
+
+        emails.append(email)
+        # Move to processed/ — prevents re-processing on next run
+        path.rename(processed_dir / path.name)
+
+    if emails:
+        print(f"  Loaded {len(emails)} email(s) from staging/")
+    elif json_files:
+        print(f"  {len(json_files)} file(s) in staging/ but none were valid.")
+
+    return emails
+
+
 def load_processed(data_dir: Path) -> set:
     """Load set of already-processed email IDs."""
     processed_file = data_dir / "processed.json"
@@ -88,21 +142,35 @@ def main():
             print("\n✗ Style profile could not be generated (see above).")
         return
 
-    # ── 1. Connect to Gmail ──────────────────────────────
-    print("\n── Connecting to Gmail...")
+    # ── 1. Email input — staging first, Gmail fallback ───
+    staging_dir = project_root / "staging"
     gmail = GmailClient(
         credentials_file=str(project_root / config["gmail"]["credentials_file"]),
         token_file=str(project_root / config["gmail"]["token_file"]),
     )
-    gmail.authenticate()
 
-    # ── 2. Fetch recent emails ───────────────────────────
-    hours = args.hours or config["gmail"]["lookback_hours"]
-    print(f"\n── Fetching emails from the last {hours} hours...")
-    emails = gmail.fetch_recent_emails(
-        hours=hours,
-        labels=config["gmail"].get("scan_labels", ["INBOX"]),
-    )
+    print("\n── Checking staging/ for emails from n8n...")
+    emails = load_from_staging(staging_dir)
+
+    if emails:
+        print(f"  Using {len(emails)} email(s) from n8n staging/")
+        print("  (Gmail API fetch skipped — emails came from n8n)")
+    else:
+        print("  staging/ is empty — falling back to Gmail API fetch.")
+        print("\n── Connecting to Gmail...")
+        try:
+            gmail.authenticate()
+        except Exception as e:
+            print(f"\n✗ Gmail authentication failed: {e}")
+            print("  Run: python src/gmail_client.py --auth --headless")
+            sys.exit(1)
+
+        hours = args.hours or config["gmail"]["lookback_hours"]
+        print(f"\n── Fetching emails from the last {hours} hours...")
+        emails = gmail.fetch_recent_emails(
+            hours=hours,
+            labels=config["gmail"].get("scan_labels", ["INBOX"]),
+        )
 
     if not emails:
         print("No new emails. Nothing to do.")
@@ -183,6 +251,17 @@ def main():
             draft_mark = " [draft]" if cls.get("needs_draft") else ""
             print(f"  {icon} {cls['summary'][:70]}{draft_mark}")
     else:
+        # Ensure Gmail is authenticated for output steps (drafts, send, archive).
+        # If emails came from staging, Gmail may not have been authenticated yet.
+        if not gmail.service:
+            print("\n── Connecting to Gmail for output (drafts/send)...")
+            try:
+                gmail.authenticate()
+            except Exception as e:
+                print(f"\n✗ Gmail authentication failed: {e}")
+                print("  Run: python src/gmail_client.py --auth --headless")
+                sys.exit(1)
+
         # Send briefing email
         print(f"\n── Sending briefing: {subject}")
         send_to = briefing_config.get("send_to", config["gmail"]["your_email"])

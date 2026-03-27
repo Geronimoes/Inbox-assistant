@@ -7,12 +7,16 @@ token.json
 data/processed.json
 data/weekly-stats.json
 
-# Writing samples contain real email text
+# Writing samples contain real email text — never commit
 writing-samples/samples/
+writing-samples/curated/*.txt
+writing-samples/curated/*.md
 
-# Generated files
+# Generated and transient files
 dashboard/index.html
 logs/
+data/preview.html
+staging/processed/
 
 # Python virtual environments
 env/

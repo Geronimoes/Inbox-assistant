@@ -1,0 +1,92 @@
+{
+  "name": "Inbox Assistant — BCC Feedback Loop",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "filters": {
+          "q": "to:YOUR_GMAIL_ADDRESS+inbox-log@gmail.com newer_than:1d"
+        },
+        "options": {
+          "format": "full"
+        },
+        "returnAll": false,
+        "limit": 20
+      },
+      "id": "gmail-fetch-bcc",
+      "name": "Fetch BCC Feedback Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [460, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail (Professor)"
+        }
+      },
+      "notes": "CONFIGURE: Replace YOUR_GMAIL_ADDRESS with your actual Gmail address. The +inbox-log alias does not need to be created — it works automatically with Gmail."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform BCC feedback emails to the feedback staging schema.\n// These are copies of emails the professor sent, captured via BCC.\n// The Python feedback_handler.py will process them from staging/feedback/.\n\nconst items = [];\n\nfor (const item of $input.all()) {\n  const msg = item.json;\n  \n  const headers = {};\n  for (const h of (msg.payload?.headers || [])) {\n    headers[h.name.toLowerCase()] = h.value;\n  }\n  \n  function extractBody(payload) {\n    if (payload.mimeType === 'text/plain' && payload.body?.data) {\n      return Buffer.from(payload.body.data, 'base64').toString('utf-8');\n    }\n    for (const part of (payload.parts || [])) {\n      const text = extractBody(part);\n      if (text) return text;\n    }\n    return '';\n  }\n  \n  const feedback = {\n    // Source email metadata\n    id: msg.id,\n    thread_id: msg.threadId,\n    subject: headers['subject'] || '(no subject)',\n    from: headers['from'] || '',\n    to: headers['to'] || '',\n    date: headers['date'] || '',\n    snippet: msg.snippet || '',\n    body_text: extractBody(msg.payload || '').substring(0, 3000),\n    labels: msg.labelIds || [],\n    attachments: [],\n    // Mark as feedback so Python knows how to process it\n    _feedback_type: 'bcc_sent_copy'\n  };\n  \n  items.push({ json: feedback });\n}\n\nreturn items;"
+      },
+      "id": "transform-feedback",
+      "name": "Transform to Feedback Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "command": "=echo '{{ JSON.stringify($json) }}' > /home/jeroen/projects/inbox-assistant/staging/feedback/feedback-{{ $json.id }}.json",
+        "executeOnce": false
+      },
+      "id": "write-to-feedback",
+      "name": "Write to Feedback Staging",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "notes": "CONFIGURE: Update the path if your project is not in /home/jeroen/projects/inbox-assistant/"
+    }
+  ],
+  "connections": {
+    "Every 30 Minutes": {
+      "main": [
+        [{ "node": "Fetch BCC Feedback Emails", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch BCC Feedback Emails": {
+      "main": [
+        [{ "node": "Transform to Feedback Format", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform to Feedback Format": {
+      "main": [
+        [{ "node": "Write to Feedback Staging", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["inbox-assistant"],
+  "_readme": "Import this workflow in n8n via Settings > Import Workflow. See n8n/README.md for setup instructions. This workflow monitors your BCC alias and routes sent email copies to the writing style corpus."
+}
