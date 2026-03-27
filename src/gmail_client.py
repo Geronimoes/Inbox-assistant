@@ -5,11 +5,15 @@ Handles authentication, fetching emails, creating drafts, and sending
 the briefing email. Uses Google's official API client library.
 """
 
+import http.server
 import os
 import sys
 import json
 import base64
 import argparse
+import threading
+import time
+import urllib.parse
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -27,6 +31,72 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.send",
 ]
+
+
+def _run_headless_auth(flow):
+    """Run OAuth via a local HTTP server on port 8080 (for SSH tunnel use).
+
+    Waits for Google's redirect to localhost:8080/?code=... and exchanges it
+    for a token. Only captures requests that actually contain an auth code,
+    ignoring browser preflight/favicon requests.
+    """
+    result = {}
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            if "code" in params:
+                # Store the full redirect URL — needed for PKCE token exchange
+                result["authorization_response"] = (
+                    "http://localhost:8080" + self.path
+                )
+                result["state"] = params["state"][0] if "state" in params else ""
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(
+                    b"<h1>Authentication successful!</h1>"
+                    b"<p>You can close this tab and return to the terminal.</p>"
+                )
+            else:
+                # Favicon, preflight, or direct visit — ignore
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(
+                    b"<p>Waiting for Google to redirect here after you "
+                    b"approve access. Please use the URL from the terminal.</p>"
+                )
+
+        def log_message(self, *args):
+            pass  # suppress request logs
+
+    server = http.server.HTTPServer(("localhost", 8080), _Handler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+
+    flow.redirect_uri = "http://localhost:8080/"
+    auth_url, _ = flow.authorization_url(prompt="consent")
+    print(f"Please visit this URL to authorise:\n\n  {auth_url}\n")
+    print("(Do not visit localhost:8080 directly — Google will redirect there"
+          " automatically after you approve.)\n")
+
+    while not result.get("authorization_response"):
+        time.sleep(0.2)
+
+    server.shutdown()
+
+    # Sync the state so the CSRF check passes
+    if result.get("state"):
+        flow.oauth2session._state = result["state"]
+
+    # Allow http://localhost redirect (oauthlib requires https by default)
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    flow.fetch_token(authorization_response=result["authorization_response"])
+    del os.environ["OAUTHLIB_INSECURE_TRANSPORT"]
+    return flow.credentials
 
 
 class GmailClient:
@@ -57,8 +127,15 @@ class GmailClient:
                     self.credentials_file, SCOPES
                 )
                 if headless:
-                    # For headless VPS: prints URL, user pastes auth code
-                    creds = flow.run_console()
+                    # For headless VPS: start a local auth server on port 8080,
+                    # then tunnel it via SSH from your local machine:
+                    #   ssh -L 8080:localhost:8080 <tailscale-ip>
+                    # then visit http://localhost:8080 in your local browser.
+                    print("\nStarting local auth server on port 8080...")
+                    print("On your local machine, run:")
+                    print("  ssh -L 8080:localhost:8080 <your-vps-hostname>")
+                    print("Then open http://localhost:8080 in your browser.\n")
+                    creds = _run_headless_auth(flow)
                 else:
                     # Opens browser locally
                     creds = flow.run_local_server(port=0)
