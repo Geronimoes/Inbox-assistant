@@ -108,8 +108,11 @@ class BriefingGenerator:
                 color="#d97706", bg="#fffbeb", att_lookup=att_lookup
             ))
 
-        # FYI section
-        if fyi:
+        # FYI section — sorted by fyi_priority (high → medium → low)
+        _pri = {"high": 0, "medium": 1, "low": 2}
+        fyi_sorted = sorted(fyi, key=lambda c: _pri.get(c.get("fyi_priority", "low"), 2))
+        if fyi_sorted:
+            fyi = fyi_sorted
             display_fyi = fyi[:self.max_fyi_items]
             remaining = len(fyi) - len(display_fyi)
 
@@ -319,12 +322,16 @@ class BriefingGenerator:
         else:
             lines += ["## 📋 Reply Needed", "", "_Nothing to reply to._", ""]
 
-        # ── FYI section ───────────────────────────────────────────────────────
+        # ── FYI section — sorted by fyi_priority (high → medium → low) ─────
+        _pri = {"high": 0, "medium": 1, "low": 2}
+        fyi = sorted(fyi, key=lambda c: _pri.get(c.get("fyi_priority", "low"), 2))
         if fyi:
             lines += ["## 🔵 For Your Information", ""]
             for item in fyi[:self.max_fyi_items]:
                 summary = item.get("summary", "")
-                lines.append(f"- {summary}")
+                pri = item.get("fyi_priority", "")
+                pri_tag = " ⬆" if pri == "high" else ""
+                lines.append(f"- {summary}{pri_tag}")
             if len(fyi) > self.max_fyi_items:
                 lines.append(f"- _...and {len(fyi) - self.max_fyi_items} more_")
             lines.append("")
