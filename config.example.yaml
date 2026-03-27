@@ -93,8 +93,13 @@ obsidian:
 
 # ── Draft reply settings ────────────────────────────────
 drafts:
-  enabled: true                          # Set false to disable draft creation
-  
+  enabled: true                          # Set false to disable draft creation entirely
+  save_to_gmail: false                   # Save drafts to Gmail Drafts folder
+                                         # Set false if you reply from a different
+                                         # account (e.g. university email)
+                                         # Drafts are always included in the briefing
+                                         # email and Obsidian note regardless.
+
   # Language handling
   reply_language: "match"                # "match" = reply in sender's language
                                          # "en" = always English

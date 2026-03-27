@@ -166,11 +166,13 @@ class BriefingGenerator:
 
         for item in items:
             email_id = item.get("email_id", "")
-            has_draft = email_id in draft_lookup
+            draft = draft_lookup.get(email_id)
+            has_draft = draft is not None
+
             draft_badge = (
                 ' <span style="background: #dcfce7; color: #166534; '
                 'font-size: 11px; padding: 2px 6px; border-radius: 3px;">'
-                '✎ Draft ready</span>'
+                '✎ Draft reply</span>'
                 if has_draft else ""
             )
 
@@ -202,6 +204,27 @@ class BriefingGenerator:
                     + "</div>"
                 )
 
+            # Draft text block (inline, collapsible)
+            draft_html = ""
+            if has_draft and draft.get("draft_text"):
+                draft_text_escaped = (
+                    draft["draft_text"]
+                    .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    .replace("\n", "<br>")
+                )
+                draft_html = f"""
+                    <details style="margin-top: 8px;">
+                        <summary style="font-size: 12px; color: #166534; cursor: pointer;">
+                            ✎ Draft reply (click to expand)
+                        </summary>
+                        <div style="margin-top: 6px; padding: 10px 12px;
+                                    background: #f0fdf4; border-radius: 4px;
+                                    font-size: 13px; white-space: pre-wrap;
+                                    font-family: Georgia, serif; color: #1e293b;">
+                            {draft_text_escaped}
+                        </div>
+                    </details>"""
+
             if compact:
                 html += f"""
                 <div style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">
@@ -220,6 +243,7 @@ class BriefingGenerator:
                         {item.get('suggested_action', '')}
                     </div>
                     {att_html}
+                    {draft_html}
                 </div>
                 """
 
@@ -334,7 +358,14 @@ class BriefingGenerator:
         if deadline:
             lines.append(f"**Deadline:** {deadline}  ")
         if email_id in draft_lookup:
-            lines.append("✎ *Draft ready in Gmail Drafts*  ")
+            draft_text = draft_lookup[email_id].get("draft_text", "")
+            if draft_text:
+                lines.append("**Draft reply:**")
+                lines.append("```")
+                lines.append(draft_text)
+                lines.append("```")
+            else:
+                lines.append("✎ *Draft reply available*  ")
 
         # Attachments
         atts = att_lookup.get(email_id, [])

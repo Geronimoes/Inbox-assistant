@@ -385,15 +385,17 @@ def main():
         send_to = briefing_config.get("send_to", config["gmail"]["your_email"])
         gmail.send_email(send_to, subject, html_body)
 
-        # Save drafts to Gmail
-        prefix = config.get("drafts", {}).get("draft_prefix", "[AI Draft] ")
-        for draft in drafts:
-            gmail.create_draft(
-                to=draft["to"],
-                subject=f"{prefix}{draft['subject']}",
-                body=draft["draft_text"],
-                thread_id=draft.get("thread_id"),
-            )
+        # Save drafts to Gmail (only if save_to_gmail is enabled)
+        drafts_cfg = config.get("drafts", {})
+        if drafts_cfg.get("save_to_gmail", False) and drafts:
+            prefix = drafts_cfg.get("draft_prefix", "[AI Draft] ")
+            for draft in drafts:
+                gmail.create_draft(
+                    to=draft["to"],
+                    subject=f"{prefix}{draft['subject']}",
+                    body=draft["draft_text"],
+                    thread_id=draft.get("thread_id"),
+                )
 
         # Archive noise (if enabled)
         if config.get("archive", {}).get("auto_archive_noise", False):

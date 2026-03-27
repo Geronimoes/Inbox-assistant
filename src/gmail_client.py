@@ -146,13 +146,47 @@ class GmailClient:
         self.service = build("gmail", "v1", credentials=creds)
         print("✓ Gmail API authenticated successfully.")
 
+    def _resolve_label_ids(self, label_names: list[str]) -> list[str]:
+        """Resolve label display names to Gmail label IDs.
+
+        System labels (INBOX, SENT, SPAM, etc.) are already IDs and are
+        passed through unchanged. Custom labels like '_UCM-redirect' are
+        looked up by name and replaced with their API ID.
+        """
+        system_labels = {
+            "INBOX", "SENT", "DRAFT", "SPAM", "TRASH", "STARRED", "IMPORTANT",
+            "UNREAD", "CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS",
+            "CATEGORY_UPDATES", "CATEGORY_FORUMS",
+        }
+        needs_lookup = [l for l in label_names if l not in system_labels]
+        if not needs_lookup:
+            return label_names
+
+        all_labels = self.service.users().labels().list(
+            userId="me"
+        ).execute().get("labels", [])
+        name_to_id = {l["name"]: l["id"] for l in all_labels}
+
+        resolved = []
+        for name in label_names:
+            if name in system_labels:
+                resolved.append(name)
+            elif name in name_to_id:
+                resolved.append(name_to_id[name])
+            else:
+                print(f"  ⚠ Gmail label not found: '{name}' — skipping")
+        return resolved
+
     def fetch_recent_emails(self, hours: int = 24,
                             labels: list[str] | None = None,
                             max_results: int = 100) -> list[dict]:
         """Fetch emails from the last N hours.
-        
+
         Returns a list of dicts with: id, thread_id, subject, from, to, date,
         snippet, body_text, labels.
+
+        Labels can be specified by display name (e.g. '_UCM-redirect') or by
+        Gmail label ID — both are handled automatically.
         """
         if not self.service:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
@@ -165,10 +199,15 @@ class GmailClient:
         if labels is None:
             labels = ["INBOX"]
 
+        label_ids = self._resolve_label_ids(labels)
+        if not label_ids:
+            print("  ⚠ No valid labels to filter by — fetching from INBOX.")
+            label_ids = ["INBOX"]
+
         results = self.service.users().messages().list(
             userId="me",
             q=query,
-            labelIds=labels,
+            labelIds=label_ids,
             maxResults=max_results,
         ).execute()
 
