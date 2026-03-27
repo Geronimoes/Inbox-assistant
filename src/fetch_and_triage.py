@@ -127,6 +127,52 @@ def load_state(data_dir: Path) -> tuple[set, dict]:
     return ids, threads
 
 
+def append_daily_stats(data_dir: Path, classifications: list[dict],
+                       drafts: list[dict]) -> None:
+    """Append today's email counts to data/weekly-stats.json.
+
+    Keeps a rolling 90-day window. Each entry is one dict per calendar day;
+    if the script runs more than once on the same day the counts accumulate.
+    """
+    stats_file = data_dir / "weekly-stats.json"
+    stats: list[dict] = []
+    if stats_file.exists():
+        try:
+            stats = json.loads(stats_file.read_text())
+            if not isinstance(stats, list):
+                stats = []
+        except (json.JSONDecodeError, OSError):
+            stats = []
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    entry = next((s for s in stats if s.get("date") == today), None)
+    if entry is None:
+        entry = {"date": today, "urgent": 0, "action": 0,
+                 "fyi": 0, "noise": 0, "total": 0, "drafts": 0}
+        stats.append(entry)
+
+    for cls in classifications:
+        cat = cls.get("category", "")
+        if cat == "URGENT":
+            entry["urgent"] += 1
+        elif cat == "ACTION":
+            entry["action"] += 1
+        elif cat == "FYI":
+            entry["fyi"] += 1
+        elif cat == "NOISE":
+            entry["noise"] += 1
+    entry["total"] = (entry["urgent"] + entry["action"]
+                      + entry["fyi"] + entry["noise"])
+    entry["drafts"] += len(drafts)
+
+    # Keep 90 days
+    stats = sorted(stats, key=lambda s: s["date"])[-90:]
+
+    tmp = stats_file.with_suffix(".tmp")
+    tmp.write_text(json.dumps(stats, indent=2))
+    tmp.replace(stats_file)
+
+
 def save_state(data_dir: Path, processed_ids: set, thread_state: dict) -> None:
     """Save processed IDs and thread state to processed.json.
 
@@ -403,6 +449,9 @@ def main():
             if noise_ids:
                 print(f"\n── Archiving {len(noise_ids)} noise items...")
                 gmail.archive_messages(noise_ids)
+
+        # Append daily stats for the dashboard
+        append_daily_stats(data_dir, classifications, drafts)
 
         # Save state (processed IDs + thread tracking)
         new_processed = processed_ids | {e["id"] for e in new_emails}
