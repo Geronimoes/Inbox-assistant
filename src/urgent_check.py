@@ -16,6 +16,7 @@ import yaml
 from gmail_client import GmailClient
 from llm_client import LLMClient
 from classifier import EmailClassifier
+from notifier import Notifier
 
 
 def load_config() -> dict:
@@ -79,35 +80,8 @@ def main():
         return
 
     # ── Send alert ───────────────────────────────────────
-    alert_to = config.get("alerts", {}).get(
-        "alert_to", config["gmail"]["your_email"]
-    )
-
-    # Build a simple alert email
-    items_html = ""
-    for item in urgent:
-        items_html += (
-            f"<div style='background: #fef2f2; border-left: 3px solid #dc2626; "
-            f"padding: 10px 14px; margin-bottom: 8px; border-radius: 4px;'>"
-            f"<strong>{item.get('summary', '')}</strong><br>"
-            f"<span style='color: #666; font-size: 13px;'>"
-            f"{item.get('suggested_action', '')}</span></div>"
-        )
-
-    html_body = f"""
-    <div style="font-family: -apple-system, sans-serif; max-width: 500px; 
-                margin: 0 auto; color: #333;">
-        <h2 style="color: #dc2626;">⚡ Urgent Email Alert</h2>
-        <p>{len(urgent)} email(s) flagged as urgent:</p>
-        {items_html}
-        <p style="color: #94a3b8; font-size: 12px; margin-top: 16px;">
-            Check your inbox and Gmail drafts for prepared replies.
-        </p>
-    </div>
-    """
-
-    subject = f"⚡ URGENT: {len(urgent)} email(s) need your attention"
-    gmail.send_email(alert_to, subject, html_body)
+    notifier = Notifier(config, gmail_client=gmail)
+    notifier.send_urgent(urgent)
     print(f"✓ Urgent alert sent for {len(urgent)} items.")
 
 

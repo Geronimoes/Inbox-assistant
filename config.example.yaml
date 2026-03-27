@@ -114,6 +114,17 @@ drafts:
     - match: "admin"                     # University administration
       tone: "professional"
 
+# ── Notifications ───────────────────────────────────────
+# Telegram bot sends urgent alerts and a morning briefing ping.
+# To set up: create a bot via @BotFather, get the chat_id by messaging
+# @userinfobot, then fill in both values below.
+#
+# If Telegram is not configured, urgent alerts fall back to email.
+notifications:
+  telegram:
+    bot_token: "123456:ABC-DEF..."    # From @BotFather
+    chat_id: "987654321"              # Your personal chat ID (from @userinfobot)
+
 # ── Urgent alerts ───────────────────────────────────────
 alerts:
   enabled: true

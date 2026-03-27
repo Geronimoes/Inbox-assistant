@@ -27,6 +27,7 @@ from briefing import BriefingGenerator
 from style_manager import StyleManager
 from feedback_handler import process_feedback_dir
 from attachment_handler import AttachmentHandler
+from notifier import Notifier
 
 
 def load_config() -> dict:
@@ -322,7 +323,17 @@ def main():
         classifications, drafts, attachment_summaries=attachment_summaries
     )
 
-    # ── 8. Write Obsidian note ────────────────────────────
+    # ── 8. Send Telegram briefing ping ───────────────────
+    if not args.dry_run:
+        notifier = Notifier(config)
+        notifier.send_briefing_summary(
+            urgent=len(urgent),
+            action=len(actionable),
+            fyi=len(fyi),
+            noise=len(noise),
+        )
+
+    # ── 9. Write Obsidian note ────────────────────────────
     obsidian_cfg = config.get("obsidian", {})
     vault_path = obsidian_cfg.get("vault_path", "")
     if vault_path:
@@ -335,7 +346,7 @@ def main():
         except OSError as e:
             print(f"  ⚠ Could not write Obsidian note: {e}")
 
-    # ── 9. Deliver ───────────────────────────────────────
+    # ── 10. Deliver ──────────────────────────────────────
     if args.dry_run:
         print(f"\n── DRY RUN — would send briefing: {subject}")
         print(f"  Would create {len(drafts)} drafts")
