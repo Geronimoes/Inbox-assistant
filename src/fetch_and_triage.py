@@ -25,6 +25,7 @@ from classifier import EmailClassifier
 from drafter import DraftComposer
 from briefing import BriefingGenerator
 from style_manager import StyleManager
+from feedback_handler import process_feedback_dir
 
 
 def load_config() -> dict:
@@ -90,22 +91,59 @@ def load_from_staging(staging_dir: Path) -> list[dict]:
     return emails
 
 
-def load_processed(data_dir: Path) -> set:
-    """Load set of already-processed email IDs."""
+def load_state(data_dir: Path) -> tuple[set, dict]:
+    """Load processed email IDs and thread state from processed.json.
+
+    Returns:
+        processed_ids: Set of email IDs already handled (for deduplication).
+        thread_state:  Dict of thread_id → {status, subject, ...} for
+                       closed-loop tracking and feedback handler.
+
+    Automatically migrates the old v1 format {"ids": [...]} to the new
+    v2 format that also tracks thread status.
+    """
     processed_file = data_dir / "processed.json"
-    if processed_file.exists():
-        data = json.loads(processed_file.read_text())
-        return set(data.get("ids", []))
-    return set()
+    if not processed_file.exists():
+        return set(), {}
+
+    data = json.loads(processed_file.read_text())
+
+    # v1 format migration: {"ids": [...]} → v2 with threads dict
+    if "ids" in data and "threads" not in data:
+        ids = set(data["ids"])
+        # Migrate: create stub thread entries from the flat ID list
+        threads = {eid: {"email_id": eid, "status": "open",
+                         "subject": "", "classified_at": None,
+                         "handled_at": None}
+                   for eid in ids}
+        return ids, threads
+
+    threads = data.get("threads", {})
+    ids = set(data.get("ids", []))
+    # Ensure ids set is consistent with threads dict
+    ids |= {v["email_id"] for v in threads.values() if v.get("email_id")}
+    return ids, threads
 
 
-def save_processed(data_dir: Path, processed_ids: set) -> None:
-    """Save processed email IDs (keep last 5000 to prevent unbounded growth)."""
-    ids_list = sorted(processed_ids)[-5000:]
+def save_state(data_dir: Path, processed_ids: set, thread_state: dict) -> None:
+    """Save processed IDs and thread state to processed.json.
+
+    Keeps only the most recent 5000 IDs to prevent unbounded growth.
+    Thread state is kept for all known threads (they're compact dicts).
+    """
     data_dir.mkdir(parents=True, exist_ok=True)
-    (data_dir / "processed.json").write_text(
-        json.dumps({"ids": ids_list, "updated": datetime.now().isoformat()})
-    )
+    ids_list = sorted(processed_ids)[-5000:]
+
+    payload = {
+        "version": 2,
+        "updated": datetime.now().isoformat(),
+        "ids": ids_list,
+        "threads": thread_state,
+    }
+    # Write atomically
+    tmp = data_dir / "processed.tmp"
+    tmp.write_text(json.dumps(payload, indent=2))
+    tmp.replace(data_dir / "processed.json")
 
 
 def main():
@@ -142,7 +180,22 @@ def main():
             print("\n✗ Style profile could not be generated (see above).")
         return
 
-    # ── 1. Email input — staging first, Gmail fallback ───
+    # ── 1. Load state + process BCC feedback ─────────────
+    # Load processed IDs and thread state. Process any pending BCC feedback
+    # files first — they mark threads as handled and add writing samples.
+    staging_dir = project_root / "staging"
+    processed_ids, thread_state = load_state(data_dir)
+
+    feedback_dir = staging_dir / "feedback"
+    if feedback_dir.exists():
+        samples_dir = project_root / "writing-samples" / "samples"
+        feedback_results = process_feedback_dir(feedback_dir, samples_dir, thread_state)
+        if feedback_results:
+            # Save updated thread state immediately so it's not lost
+            save_state(data_dir, processed_ids, thread_state)
+            print(f"  {len(feedback_results)} thread(s) marked as handled.")
+
+    # ── 2. Email input — staging first, Gmail fallback ───
     staging_dir = project_root / "staging"
     gmail = GmailClient(
         credentials_file=str(project_root / config["gmail"]["credentials_file"]),
@@ -177,15 +230,15 @@ def main():
         return
 
     # Filter out already-processed emails
-    processed = load_processed(data_dir)
-    new_emails = [e for e in emails if e["id"] not in processed]
+    new_emails = [e for e in emails if e["id"] not in processed_ids]
 
     if not new_emails:
         print("All emails already processed. Nothing new.")
         return
 
-    print(f"  {len(new_emails)} new emails to process "
-          f"({len(emails) - len(new_emails)} already processed)")
+    n_already = len(emails) - len(new_emails)
+    print(f"  {len(new_emails)} new email(s) to process "
+          f"({n_already} already processed)")
 
     # ── 3. Initialise LLM client ─────────────────────────
     llm_config = config.get("llm")
@@ -208,6 +261,22 @@ def main():
     print(f"  📋 {len(actionable) - len(urgent)} action needed")
     print(f"  🔵 {len(fyi)} FYI")
     print(f"  ⚪ {len(noise)} noise")
+
+    # Record classified emails in thread state for closed-loop tracking
+    email_lookup = {e["id"]: e for e in new_emails}
+    now_iso = datetime.now().isoformat()
+    for cls in classifications:
+        eid = cls.get("email_id", "")
+        email = email_lookup.get(eid, {})
+        tid = email.get("thread_id", eid)
+        if tid:
+            thread_state[tid] = {
+                "email_id": eid,
+                "status": "open",
+                "subject": email.get("subject", ""),
+                "classified_at": now_iso,
+                "handled_at": None,
+            }
 
     # ── 5. Compose draft replies ─────────────────────────
     drafts = []
@@ -284,9 +353,9 @@ def main():
                 print(f"\n── Archiving {len(noise_ids)} noise items...")
                 gmail.archive_messages(noise_ids)
 
-        # Mark as processed
-        new_processed = processed | {e["id"] for e in new_emails}
-        save_processed(data_dir, new_processed)
+        # Save state (processed IDs + thread tracking)
+        new_processed = processed_ids | {e["id"] for e in new_emails}
+        save_state(data_dir, new_processed, thread_state)
 
     print("\n✓ Done!")
 
