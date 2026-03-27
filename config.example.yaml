@@ -91,6 +91,13 @@ obsidian:
   # vault_path: "~/syncthing/data/Notes"   # ← switch to this for real vault
   briefing_folder: "inbox-briefings"       # subfolder created inside the vault
 
+# ── Dashboard ───────────────────────────────────────────
+# By default the dashboard is written to dashboard/index.html inside this
+# project. Set output_path to write it directly to your web server's
+# static files directory so it's always up to date without any syncing.
+dashboard:
+  output_path: ""   # e.g. "/home/jeroen/caddy/sites/inbox-dashboard/index.html"
+
 # ── Draft reply settings ────────────────────────────────
 drafts:
   enabled: true                          # Set false to disable draft creation entirely

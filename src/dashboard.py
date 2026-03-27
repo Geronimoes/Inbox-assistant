@@ -244,7 +244,17 @@ def main():
 
     project_root = Path(__file__).parent.parent
     stats_file   = project_root / "data" / "weekly-stats.json"
+
+    # Allow a custom output path via config.yaml (dashboard.output_path).
+    # Defaults to dashboard/index.html inside the project root.
     output_file  = project_root / "dashboard" / "index.html"
+    config_path  = project_root / "config.yaml"
+    if config_path.exists():
+        import yaml
+        cfg = yaml.safe_load(config_path.read_text())
+        custom_path = cfg.get("dashboard", {}).get("output_path", "")
+        if custom_path:
+            output_file = Path(custom_path).expanduser()
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
