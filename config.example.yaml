@@ -1,0 +1,131 @@
+# Inbox Briefing Assistant — Configuration
+# Copy this to config.yaml and fill in your values.
+
+# ── Gmail settings ──────────────────────────────────────
+gmail:
+  credentials_file: "credentials.json"   # OAuth client credentials
+  token_file: "token.json"               # Auto-generated after first auth
+  your_email: "you@gmail.com"            # Your Gmail address
+  
+  # Which labels/folders to scan (Gmail label IDs)
+  # Default: INBOX. Add others if needed.
+  scan_labels:
+    - "INBOX"
+  
+  # How far back to look for new emails (in hours)
+  lookback_hours: 24
+
+# ── LLM providers ───────────────────────────────────────
+# Configure which LLM provider and model to use for each task.
+# You can start with only Anthropic — add other providers later.
+#
+# To get API keys:
+#   Anthropic: https://console.anthropic.com/
+#   Google:    https://aistudio.google.com/app/apikey
+#   Groq:      https://console.groq.com/keys
+llm:
+  providers:
+    anthropic:
+      api_key: "sk-ant-..."              # Anthropic API key
+    google:
+      api_key: "AIza..."                 # Google AI Studio key (for Gemini)
+    groq:
+      api_key: "gsk_..."                 # Groq API key (fast + cheap)
+
+  # Which provider/model to use for each task.
+  # Recommendation: use a fast/cheap model for classification (high volume),
+  # and a more capable model for drafting (quality matters there).
+  tasks:
+    classification:
+      provider: "anthropic"
+      model: "claude-haiku-4-5-20251001" # Fast + cheap — classifies many emails
+
+    draft_replies:
+      provider: "anthropic"
+      model: "claude-sonnet-4-6"         # More capable — drafts need good writing
+
+    summarization:
+      provider: "anthropic"
+      model: "claude-haiku-4-5-20251001"
+
+    style_profile:
+      provider: "anthropic"
+      model: "claude-haiku-4-5-20251001" # Weekly task — any model works
+
+    attachment_classify:
+      provider: "anthropic"
+      model: "claude-haiku-4-5-20251001"
+
+  # Example: switch classification to Groq for lower cost / higher speed
+  # tasks:
+  #   classification:
+  #     provider: "groq"
+  #     model: "llama-3.3-70b-versatile"
+
+# ── Briefing settings ──────────────────────────────────
+briefing:
+  # When to send (used in cron, but also shown in briefing header)
+  timezone: "Europe/Amsterdam"           # Adjust to your timezone
+  
+  # Send briefing as email to yourself
+  send_to: "you@gmail.com"              # Where to receive the briefing
+  
+  # How many FYI items to include (keeps briefing concise)
+  max_fyi_items: 10
+  
+  # Include noise count? (e.g., "14 items archived")
+  show_noise_count: true
+
+# ── Draft reply settings ────────────────────────────────
+drafts:
+  enabled: true                          # Set false to disable draft creation
+  
+  # Language handling
+  reply_language: "match"                # "match" = reply in sender's language
+                                         # "en" = always English
+                                         # "nl" = always Dutch
+  
+  # Add a note to drafts so you know they're AI-generated
+  draft_prefix: "[AI Draft] "            # Prepended to draft subject lines
+  
+  # Formality levels by sender type
+  # Options: formal, professional, warm, casual
+  default_tone: "professional"
+  tone_overrides:
+    - match: "students"                  # PhD students, TAs
+      tone: "warm"
+    - match: "editors"                   # Journal editors
+      tone: "formal"
+    - match: "admin"                     # University administration
+      tone: "professional"
+
+# ── Urgent alerts ───────────────────────────────────────
+alerts:
+  enabled: true
+  
+  # How often to check (used in cron setup)
+  check_interval_hours: 2
+  
+  # Only alert during these hours (24h format)
+  quiet_hours_start: 21                  # 9 PM — no alerts after this
+  quiet_hours_end: 7                     # 7 AM — no alerts before this
+  
+  # Alert method: "email" sends an email with ⚡ subject prefix
+  method: "email"
+  alert_to: "you@gmail.com"
+
+# ── Archive behavior ────────────────────────────────────
+archive:
+  auto_archive_noise: false              # Set true to auto-archive noise
+  # Even when true, only archives:
+  # - Promotional emails
+  # - Automated notifications
+  # - Mailing list digests
+  # Never archives anything classified as ACTION or above.
+
+# ── Logging ─────────────────────────────────────────────
+logging:
+  level: "INFO"                          # DEBUG, INFO, WARNING, ERROR
+  file: "logs/assistant.log"
+  max_size_mb: 10
+  backup_count: 5

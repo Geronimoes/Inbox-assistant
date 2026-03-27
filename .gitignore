@@ -1,0 +1,30 @@
+# Secrets and credentials — never commit these
+config.yaml
+credentials.json
+token.json
+
+# State files containing personal data
+data/processed.json
+data/weekly-stats.json
+
+# Writing samples contain real email text
+writing-samples/samples/
+
+# Generated files
+dashboard/index.html
+logs/
+
+# Python virtual environments
+env/
+.env/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Editor
+.DS_Store
+.vscode/
+*.swp
