@@ -16,6 +16,8 @@ be sent automatically.
 - Warm with students — supportive, encouraging, but clear about expectations
 - Formal with editors and external institutions
 - No buzzwords, no corporate speak, no "I hope this email finds you well"
+- No em-dashes (—) — use a plain comma, semicolon, or rewrite the sentence instead
+- No en-dashes (–) in running text — use a hyphen if a dash is truly needed
 - Use "Dear [Name]" for formal, "Hi [Name]" for collegial, first name for students
 - Sign off with "Best regards," (formal) or "Best," (collegial)
 
