@@ -20,9 +20,16 @@ class BriefingGenerator:
         self.show_noise_count = show_noise_count
 
     def generate(self, classifications: list[dict],
-                 drafts: list[dict]) -> tuple[str, str]:
+                 drafts: list[dict],
+                 attachment_summaries: dict | None = None) -> tuple[str, str]:
         """Generate the briefing email.
-        
+
+        Args:
+            classifications:     Output of EmailClassifier.classify_batch().
+            drafts:              Output of DraftComposer.compose_batch().
+            attachment_summaries: Optional dict mapping email_id → list of
+                                  attachment summary dicts from AttachmentHandler.
+
         Returns (subject, html_body).
         """
         now = datetime.now(self.timezone)
@@ -34,10 +41,11 @@ class BriefingGenerator:
         noise = [c for c in classifications if c["category"] == "NOISE"]
 
         draft_lookup = {d["email_id"]: d for d in drafts}
+        att_lookup = attachment_summaries or {}
 
         subject = self._make_subject(date_str, len(urgent), len(action))
         html = self._render_html(
-            date_str, urgent, action, fyi, noise, draft_lookup
+            date_str, urgent, action, fyi, noise, draft_lookup, att_lookup
         )
 
         return subject, html
@@ -57,7 +65,7 @@ class BriefingGenerator:
 
     def _render_html(self, date_str: str,
                      urgent: list, action: list, fyi: list, noise: list,
-                     draft_lookup: dict) -> str:
+                     draft_lookup: dict, att_lookup: dict | None = None) -> str:
         """Render the briefing as HTML email."""
         sections = []
 
@@ -77,17 +85,19 @@ class BriefingGenerator:
         """)
 
         # Urgent section
+        att_lookup = att_lookup or {}
+
         if urgent:
             sections.append(self._render_section(
                 "⚡ Needs attention today", urgent, draft_lookup,
-                color="#dc2626", bg="#fef2f2"
+                color="#dc2626", bg="#fef2f2", att_lookup=att_lookup
             ))
 
         # Action section
         if action:
             sections.append(self._render_section(
                 "📋 Reply needed (not urgent)", action, draft_lookup,
-                color="#d97706", bg="#fffbeb"
+                color="#d97706", bg="#fffbeb", att_lookup=att_lookup
             ))
 
         # FYI section
@@ -97,7 +107,8 @@ class BriefingGenerator:
 
             sections.append(self._render_section(
                 "🔵 For your information", display_fyi, draft_lookup,
-                color="#2563eb", bg="#eff6ff", compact=True
+                color="#2563eb", bg="#eff6ff", compact=True,
+                att_lookup=att_lookup
             ))
             if remaining > 0:
                 sections.append(
@@ -133,7 +144,8 @@ class BriefingGenerator:
     def _render_section(self, title: str, items: list,
                         draft_lookup: dict,
                         color: str, bg: str,
-                        compact: bool = False) -> str:
+                        compact: bool = False,
+                        att_lookup: dict | None = None) -> str:
         """Render a single section of the briefing."""
         html = f"""
         <div style="margin-top: 20px;">
@@ -141,6 +153,8 @@ class BriefingGenerator:
                 {title}
             </h2>
         """
+
+        att_lookup = att_lookup or {}
 
         for item in items:
             email_id = item.get("email_id", "")
@@ -160,6 +174,26 @@ class BriefingGenerator:
                     f'⏰ {item["deadline"]}</span>'
                 )
 
+            # Attachment summaries for this email
+            att_html = ""
+            attachments = att_lookup.get(email_id, [])
+            if attachments:
+                att_lines = []
+                for att in attachments:
+                    icon = {"paper": "📄", "submission": "📝", "form": "📋",
+                            "invoice": "🧾", "calendar": "📅",
+                            "document": "📃"}.get(att.get("category", ""), "📎")
+                    att_lines.append(
+                        f'{icon} <em>{att.get("summary", att.get("filename", ""))}</em>'
+                    )
+                att_html = (
+                    '<div style="font-size: 12px; color: #64748b; '
+                    'margin-top: 4px; padding-top: 4px; '
+                    'border-top: 1px dashed #e2e8f0;">'
+                    + " &nbsp;·&nbsp; ".join(att_lines)
+                    + "</div>"
+                )
+
             if compact:
                 html += f"""
                 <div style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">
@@ -168,7 +202,7 @@ class BriefingGenerator:
                 """
             else:
                 html += f"""
-                <div style="background: {bg}; border-radius: 6px; 
+                <div style="background: {bg}; border-radius: 6px;
                             padding: 12px 16px; margin-bottom: 8px;
                             border-left: 3px solid {color};">
                     <div style="font-size: 14px; font-weight: 600;">
@@ -177,6 +211,7 @@ class BriefingGenerator:
                     <div style="font-size: 13px; color: #64748b; margin-top: 4px;">
                         {item.get('suggested_action', '')}
                     </div>
+                    {att_html}
                 </div>
                 """
 

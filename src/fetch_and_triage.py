@@ -26,6 +26,7 @@ from drafter import DraftComposer
 from briefing import BriefingGenerator
 from style_manager import StyleManager
 from feedback_handler import process_feedback_dir
+from attachment_handler import AttachmentHandler
 
 
 def load_config() -> dict:
@@ -278,7 +279,23 @@ def main():
                 "handled_at": None,
             }
 
-    # ── 5. Compose draft replies ─────────────────────────
+    # ── 5. Process attachments ───────────────────────────
+    # Build a lookup: email_id → list of attachment summaries
+    # Only runs when emails have a non-empty 'attachments' list (n8n staging path)
+    attachment_summaries: dict = {}
+    emails_with_attachments = [e for e in new_emails if e.get("attachments")]
+    if emails_with_attachments:
+        print(f"\n── Processing attachments "
+              f"({sum(len(e['attachments']) for e in emails_with_attachments)} file(s))...")
+        att_handler = AttachmentHandler(project_root, llm_client=llm)
+        for email in emails_with_attachments:
+            summaries = att_handler.process_email_attachments(
+                email["id"], email["attachments"]
+            )
+            if summaries:
+                attachment_summaries[email["id"]] = summaries
+
+    # ── 6. Compose draft replies ─────────────────────────
     drafts = []
     if not args.no_drafts and config.get("drafts", {}).get("enabled", True):
         needs_draft = [c for c in classifications if c.get("needs_draft")]
@@ -298,7 +315,9 @@ def main():
         max_fyi_items=briefing_config.get("max_fyi_items", 10),
         show_noise_count=briefing_config.get("show_noise_count", True),
     )
-    subject, html_body = generator.generate(classifications, drafts)
+    subject, html_body = generator.generate(
+        classifications, drafts, attachment_summaries=attachment_summaries
+    )
 
     # ── 7. Deliver ───────────────────────────────────────
     if args.dry_run:
