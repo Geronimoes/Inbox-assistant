@@ -167,3 +167,41 @@ logging:
   file: "logs/assistant.log"
   max_size_mb: 10
   backup_count: 5
+
+# ── Project email archiver ───────────────────────────────────────────────────
+# Saves emails related to specific projects as individual Markdown files in
+# your Obsidian vault. Each email becomes its own note with full metadata
+# (date, from, to, cc, subject, thread ID) in YAML frontmatter, so you can
+# use Obsidian Dataview to query and group them.
+#
+# Matching: an email is included if the subject contains any keyword (case-
+# insensitive) OR any collaborator name/email fragment appears in from/to/cc.
+#
+# Usage:
+#   python src/project_fetch.py               # export all projects (last 24h)
+#   python src/project_fetch.py --all         # backfill full history (up to 500)
+#   python src/project_fetch.py --hours 72    # custom lookback window
+#   python src/project_fetch.py --project my-project-id
+#   python src/project_fetch.py --dry-run     # preview without writing
+#
+# Optional cron (add manually once you've verified output looks right):
+#   0 20 * * * cd /path/to/inbox-assistant && env/bin/python src/project_fetch.py >> logs/project-fetch.log 2>&1
+#
+# NOTE: The Gmail API returns at most 500 emails per call. For very large
+# inboxes a full --all backfill may miss older emails. This is a known
+# limitation; pagination support is a future enhancement.
+projects:
+  - id: my-project                       # Used for --project flag and state tracking
+    name: "My Project"                   # Human-readable name shown in log output
+    vault_folder: "project-context/my-project"  # Path relative to obsidian.vault_path
+    keywords:                            # Match against email subject (case-insensitive)
+      - "Project Name"
+      - "COURSE123"
+    collaborators:                       # Match against from/to/cc fields
+      - name: "Alice Smith"              # Full name — matched as substring (case-insensitive)
+        email_fragment: "alice.smith"    # Optional: partial email address to match
+      - name: "Bob Jones"
+        # email_fragment omitted — name-only match
+    # scan_labels:                       # Optional: override global gmail.scan_labels
+    #   - "_UCM-redirect"
+    #   - "INBOX"

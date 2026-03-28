@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source env/bin/activate)",
+      "Bash(python src/notifier.py --test)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(python src/gmail_client.py --test)",
+      "Bash(python src/fetch_and_triage.py --dry-run --hours 4)",
+      "Bash(python src/fetch_and_triage.py --dry-run)",
+      "Bash(python -c \":*)"
+    ]
+  }
+}

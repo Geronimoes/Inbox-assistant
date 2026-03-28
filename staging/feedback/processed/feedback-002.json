@@ -1,0 +1,13 @@
+{
+  "id": "feedback-002",
+  "thread_id": "test-thread-002",
+  "subject": "Re: Question about supervision meeting",
+  "from": "professor@gmail.com",
+  "to": "student@university.edu",
+  "date": "Thu, 27 Mar 2026 11:30:00 +0100",
+  "snippet": "Hi, yes let's meet next week.",
+  "body_text": "Hi,\n\nYes, let's meet next week. Tuesday at 2pm works well for me.\n\nBest,\nJeroen\n\nOn Thu, 27 Mar 2026, Student wrote:\n> Dear Professor,",
+  "labels": [],
+  "attachments": [],
+  "_feedback_type": "bcc_sent_copy"
+}

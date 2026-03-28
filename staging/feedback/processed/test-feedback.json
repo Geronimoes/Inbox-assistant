@@ -1,0 +1,13 @@
+{
+  "id": "feedback-001",
+  "thread_id": "test-thread-001",
+  "subject": "Re: Test email from n8n simulation",
+  "from": "professor@gmail.com",
+  "to": "test@example.com",
+  "date": "Thu, 27 Mar 2026 11:00:00 +0100",
+  "snippet": "Hi, thanks for your message.",
+  "body_text": "Hi Test,\n\nThanks for your message. The integration is working correctly.\n\nBest,\nJeroen\n\nOn Thu, 27 Mar 2026, Test Sender wrote:\n> Dear Professor,\n> This is a test email.",
+  "labels": [],
+  "attachments": [],
+  "_feedback_type": "bcc_sent_copy"
+}

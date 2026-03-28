@@ -182,8 +182,8 @@ class GmailClient:
                             max_results: int = 100) -> list[dict]:
         """Fetch emails from the last N hours.
 
-        Returns a list of dicts with: id, thread_id, subject, from, to, date,
-        snippet, body_text, labels.
+        Returns a list of dicts with: id, thread_id, subject, from, to, cc,
+        date, snippet, body_text, labels.
 
         Labels can be specified by display name (e.g. '_UCM-redirect') or by
         Gmail label ID — both are handled automatically.
@@ -241,6 +241,7 @@ class GmailClient:
             "subject": headers.get("subject", "(no subject)"),
             "from": headers.get("from", ""),
             "to": headers.get("to", ""),
+            "cc": headers.get("cc", ""),
             "date": headers.get("date", ""),
             "snippet": msg.get("snippet", ""),
             "body_text": body_text[:3000],  # Truncate very long emails
