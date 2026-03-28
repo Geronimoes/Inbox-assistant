@@ -5,6 +5,7 @@ token.json
 
 # State files containing personal data
 data/processed.json
+data/project-export-state.json
 data/weekly-stats.json
 
 # Writing samples contain real email text — never commit

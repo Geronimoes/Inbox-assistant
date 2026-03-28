@@ -84,6 +84,7 @@ writing-samples/samples/
 writing-samples/curated/*.txt
 writing-samples/curated/*.md
 data/processed.json
+data/project-export-state.json
 data/weekly-stats.json
 ```
 
@@ -99,6 +100,9 @@ data/weekly-stats.json
 | `python src/urgent_check.py` | Check for urgent items only | Cron every 2 hrs 08:00–20:00 |
 | `python src/dashboard.py` | Regenerate dashboard HTML | Cron Sunday 03:00 |
 | `python src/gmail_client.py --auth --headless` | Re-authenticate Gmail OAuth | When token expires |
+| `python src/project_fetch.py --all --dry-run` | Preview project email archive | Testing |
+| `python src/project_fetch.py --all` | Backfill all project emails | Initial setup / retroactive |
+| `python src/project_fetch.py` | Incremental project email archive | Optional daily cron |
 
 Always activate the virtualenv first: `source env/bin/activate`
 
@@ -140,6 +144,9 @@ The VPS has no browser. Authentication requires SSH port forwarding via Tailscal
 | Change Obsidian briefing format | Edit `briefing.py` → `generate_markdown()` |
 | Change HTML briefing format | Edit `briefing.py` → `_render_section()` |
 | Process old emails retroactively | `python src/fetch_and_triage.py --hours 336 --no-drafts` |
+| Add a new project to archive | Add an entry to `projects:` in `config.yaml` (see README) |
+| Initial project email backfill | `python src/project_fetch.py --all` |
+| Re-export a project from scratch | Delete its entry from `data/project-export-state.json`, then run `--all` |
 
 ---
 
