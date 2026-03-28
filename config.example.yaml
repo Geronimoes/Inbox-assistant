@@ -194,6 +194,16 @@ projects:
   - id: my-project                       # Used for --project flag and state tracking
     name: "My Project"                   # Human-readable name shown in log output
     vault_folder: "project-context/my-project"  # Path relative to obsidian.vault_path
+    since: "2025-01-01"                  # Optional: only fetch emails on or after this date
+                                         # Useful for long-running projects to avoid old noise
+                                         # Format: YYYY-MM-DD
+    attachment_max_size_mb: 7            # Optional: download attachments up to this size (MB)
+                                         # They are saved in vault_folder/assets/ and linked in
+                                         # the note. Omit this line entirely to skip attachments.
+    exclude_extensions:                  # Optional: attachment file types to skip.
+      - ".ics"                           # Inline images (signatures, logos) are always skipped
+                                         # automatically via Content-Disposition — no need to list
+                                         # image extensions here unless you want to skip ALL images.
     keywords:                            # Match against email subject (case-insensitive)
       - "Project Name"
       - "COURSE123"

@@ -179,7 +179,8 @@ class GmailClient:
 
     def fetch_recent_emails(self, hours: int = 24,
                             labels: list[str] | None = None,
-                            max_results: int = 100) -> list[dict]:
+                            max_results: int = 100,
+                            extra_query: str = "") -> list[dict]:
         """Fetch emails from the last N hours.
 
         Returns a list of dicts with: id, thread_id, subject, from, to, cc,
@@ -187,6 +188,11 @@ class GmailClient:
 
         Labels can be specified by display name (e.g. '_UCM-redirect') or by
         Gmail label ID — both are handled automatically.
+
+        extra_query: optional Gmail search string appended to the time filter,
+        e.g. "(subject:PRO3030 OR from:deelman)". Used by project_fetch.py to
+        do server-side pre-filtering so the 500-result cap applies only to
+        matching emails rather than the entire inbox.
         """
         if not self.service:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
@@ -195,6 +201,8 @@ class GmailClient:
             (datetime.now() - timedelta(hours=hours)).timestamp()
         )
         query = f"after:{after_timestamp}"
+        if extra_query:
+            query = f"{query} {extra_query}"
 
         if labels is None:
             labels = ["INBOX"]
@@ -246,7 +254,55 @@ class GmailClient:
             "snippet": msg.get("snippet", ""),
             "body_text": body_text[:3000],  # Truncate very long emails
             "labels": msg.get("labelIds", []),
+            "attachment_metadata": self._extract_attachment_metadata(msg["payload"]),
         }
+
+    def _extract_attachment_metadata(self, payload: dict) -> list[dict]:
+        """Recursively extract attachment metadata from a message payload.
+
+        Returns a list of dicts with keys:
+            filename      – original filename
+            size_bytes    – file size reported by Gmail (may be 0 for inline parts)
+            attachment_id – Gmail attachment ID, used with download_attachment()
+            is_inline     – True if Content-Disposition is "inline" (embedded
+                            signature images, logos, etc.) rather than a genuine
+                            file attachment
+
+        Callers should typically skip parts where is_inline is True.
+        """
+        results = []
+        filename = payload.get("filename", "").strip()
+        att_id = payload.get("body", {}).get("attachmentId")
+        if filename and att_id:
+            # Check Content-Disposition header to distinguish true attachments
+            # from inline embedded content (signature images, logos, etc.).
+            headers = {h["name"].lower(): h["value"]
+                       for h in payload.get("headers", [])}
+            disposition = headers.get("content-disposition", "attachment").lower()
+            is_inline = disposition.startswith("inline")
+            results.append({
+                "filename": filename,
+                "size_bytes": payload.get("body", {}).get("size", 0),
+                "attachment_id": att_id,
+                "is_inline": is_inline,
+            })
+        for part in payload.get("parts", []):
+            results.extend(self._extract_attachment_metadata(part))
+        return results
+
+    def download_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        """Download an attachment and return its raw bytes.
+
+        Raises RuntimeError if not authenticated or if the API call fails.
+        """
+        if not self.service:
+            raise RuntimeError("Not authenticated. Call authenticate() first.")
+        result = self.service.users().messages().attachments().get(
+            userId="me",
+            messageId=message_id,
+            id=attachment_id,
+        ).execute()
+        return base64.urlsafe_b64decode(result["data"])
 
     def _extract_body(self, payload: dict) -> str:
         """Recursively extract plain text body from message payload."""

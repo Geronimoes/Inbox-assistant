@@ -84,6 +84,56 @@ def save_export_state(data_dir: Path, state: dict) -> None:
     tmp.replace(state_file)
 
 
+# ── Gmail query builder ──────────────────────────────────────────────────────
+
+def build_gmail_query(project: dict) -> str:
+    """Build a Gmail search string for server-side pre-filtering.
+
+    Returns a query like:
+        after:2025/09/01 (subject:"Wicked Problems" OR subject:PRO3030 OR
+         from:deelman OR to:deelman OR cc:deelman OR from:savelberg ...)
+
+    This is passed to the Gmail API so the 500-result cap applies only to
+    matching emails rather than the entire inbox. The Python matches_project()
+    filter still runs afterwards to remove any false positives.
+
+    Gmail's subject: operator matches individual words or quoted phrases.
+    The from:/to:/cc: operators match both email addresses and display names,
+    so "from:deelman" catches "Annechien Deelman <a.deelman@...>".
+
+    If the project config includes a 'since' key (e.g. "2025-09-01"),
+    an after: clause is prepended so Gmail filters by date server-side.
+    """
+    parts = []
+
+    # Optional per-project start date — keeps old unrelated emails out.
+    # Accepts ISO format "YYYY-MM-DD"; converted to Gmail's "YYYY/MM/DD".
+    since = project.get("since", "").strip()
+    if since:
+        gmail_date = since.replace("-", "/")
+        parts.append(f"after:{gmail_date}")
+
+    terms = []
+    for keyword in project.get("keywords", []):
+        # Quote multi-word keywords; single words don't need quotes
+        if " " in keyword:
+            terms.append(f'subject:"{keyword}"')
+        else:
+            terms.append(f"subject:{keyword}")
+
+    for collab in project.get("collaborators", []):
+        fragment = collab.get("email_fragment", "").strip()
+        if fragment:
+            terms.append(f"from:{fragment}")
+            terms.append(f"to:{fragment}")
+            terms.append(f"cc:{fragment}")
+
+    if terms:
+        parts.append("(" + " OR ".join(terms) + ")")
+
+    return " ".join(parts)
+
+
 # ── Email matching ───────────────────────────────────────────────────────────
 
 def matches_project(email: dict, project: dict) -> bool:
@@ -203,13 +253,99 @@ def build_frontmatter(email: dict, project: dict, date_str: str) -> str:
     return "---\n" + yaml.dump(fields, allow_unicode=True, default_flow_style=False) + "---"
 
 
+def save_attachments(
+    email: dict,
+    dest_dir: Path,
+    gmail: object,
+    max_size_bytes: int,
+    exclude_extensions: list[str],
+    dry_run: bool,
+) -> list[tuple[str, Path]]:
+    """Download email attachments under the size cap to dest_dir/assets/.
+
+    Skips:
+    - Inline attachments (Content-Disposition: inline) — signature images, logos
+    - Files whose extension is in exclude_extensions (e.g. [".ics"])
+    - Files over max_size_bytes
+
+    Returns a list of (original_filename, saved_path) for each saved file.
+    Any download error is printed and skipped — one bad attachment should
+    never abort the whole note.
+    """
+    attachments = email.get("attachment_metadata", [])
+    if not attachments:
+        return []
+
+    assets_dir = dest_dir / "assets"
+    saved = []
+
+    for att in attachments:
+        filename = att.get("filename", "").strip()
+        size = att.get("size_bytes", 0)
+        att_id = att.get("attachment_id", "")
+
+        if not filename or not att_id:
+            continue
+
+        # Skip inline embedded content (signature images, logos, etc.)
+        if att.get("is_inline", False):
+            continue
+
+        # Skip explicitly excluded extensions (e.g. .ics calendar files)
+        ext = Path(filename).suffix.lower()
+        if ext in exclude_extensions:
+            continue
+
+        if size > max_size_bytes:
+            size_mb = size / (1024 * 1024)
+            cap_mb = max_size_bytes / (1024 * 1024)
+            print(f"  ⚠ Skipping attachment '{filename}' ({size_mb:.1f} MB > {cap_mb:.0f} MB cap)")
+            continue
+
+        # Build a safe save path; prefix with email date to avoid collisions
+        # across different emails that have identically named attachments.
+        safe_name = re.sub(r"[^\w\s.\-]", "_", filename).strip()
+        save_path = assets_dir / safe_name
+        # Simple collision handling: append _2, _3, ... before the extension
+        if save_path.exists() and not dry_run:
+            stem, suffix = save_path.stem, save_path.suffix
+            for n in range(2, 100):
+                candidate = assets_dir / f"{stem}_{n}{suffix}"
+                if not candidate.exists():
+                    save_path = candidate
+                    break
+
+        if dry_run:
+            size_str = f"{size / 1024:.0f} KB" if size else "unknown size"
+            print(f"  [DRY RUN] Would save attachment: assets/{save_path.name} ({size_str})")
+            saved.append((filename, save_path))
+            continue
+
+        try:
+            assets_dir.mkdir(parents=True, exist_ok=True)
+            data = gmail.download_attachment(email["id"], att_id)
+            save_path.write_bytes(data)
+            size_str = f"{len(data) / 1024:.0f} KB"
+            print(f"  Attachment: assets/{save_path.name} ({size_str})")
+            saved.append((filename, save_path))
+        except Exception as e:
+            print(f"  ✗ Failed to download attachment '{filename}': {e}")
+
+    return saved
+
+
 def write_email_note(
     email: dict,
     project: dict,
     vault_path: Path,
     dry_run: bool,
+    attachment_links: list[tuple[str, Path]] | None = None,
 ) -> Path:
     """Write one email as a Markdown note to the project vault folder.
+
+    attachment_links: list of (original_filename, saved_path) from save_attachments().
+    If provided, a section listing the attachments with Obsidian-style links
+    is appended to the note body.
 
     Returns the path of the file written (or that would have been written).
     """
@@ -225,7 +361,18 @@ def write_email_note(
 
     frontmatter = build_frontmatter(email, project, date_str)
     body = email.get("body_text", "").strip()
-    content = frontmatter + "\n\n" + body + "\n"
+    content = frontmatter + "\n\n" + body
+
+    # Append attachment links as a Markdown section at the end of the note.
+    # Paths are written relative to the note file so Obsidian resolves them.
+    if attachment_links:
+        links = "\n".join(
+            f"- [{name}](assets/{saved.name})"
+            for name, saved in attachment_links
+        )
+        content += f"\n\n---\n\n**Attachments**\n\n{links}"
+
+    content += "\n"
 
     # Atomic write: write to .tmp first, then rename
     tmp = dest.with_suffix(".tmp")
@@ -336,9 +483,21 @@ def main():
         # Use project-specific labels if specified, else global default
         labels = project.get("scan_labels", global_labels)
 
+        # Build server-side Gmail query to pre-filter by project keywords/collaborators.
+        # This means the 500-result cap applies only to matching emails, not the
+        # whole inbox — so older emails from long-running projects are included.
+        gmail_query = build_gmail_query(project)
+        if gmail_query:
+            print(f"   Gmail query: {gmail_query}")
+
         # Fetch emails from Gmail
         try:
-            emails = gmail.fetch_recent_emails(hours=hours, labels=labels, max_results=max_results)
+            emails = gmail.fetch_recent_emails(
+                hours=hours,
+                labels=labels,
+                max_results=max_results,
+                extra_query=gmail_query,
+            )
         except Exception as e:
             print(f"  ✗ Failed to fetch emails: {e}")
             continue
@@ -357,11 +516,36 @@ def main():
             print("   Nothing new to export.")
             continue
 
+        # Attachment settings: read from project config.
+        # attachment_max_size_mb absent → attachments disabled entirely.
+        att_max_mb = project.get("attachment_max_size_mb")
+        att_max_bytes = int(att_max_mb * 1024 * 1024) if att_max_mb else None
+        # exclude_extensions: normalise to lowercase with leading dot
+        raw_excl = project.get("exclude_extensions", [])
+        exclude_extensions = [
+            e if e.startswith(".") else f".{e}"
+            for e in [x.lower() for x in raw_excl]
+        ]
+
+        dest_dir = vault_path / project["vault_folder"]
+
         # Write notes
         exported_ids = list(already_exported)
         for email in matched:
             try:
-                write_email_note(email, project, vault_path, dry_run=args.dry_run)
+                # Download attachments first so we can include links in the note.
+                att_links = []
+                if att_max_bytes is not None:
+                    att_links = save_attachments(
+                        email, dest_dir, gmail, att_max_bytes,
+                        exclude_extensions, dry_run=args.dry_run,
+                    )
+
+                write_email_note(
+                    email, project, vault_path,
+                    dry_run=args.dry_run,
+                    attachment_links=att_links,
+                )
                 if not args.dry_run:
                     exported_ids.append(email["id"])
                     total_written += 1
