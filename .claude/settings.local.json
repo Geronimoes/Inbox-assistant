@@ -9,7 +9,10 @@
       "Bash(python src/gmail_client.py --test)",
       "Bash(python src/fetch_and_triage.py --dry-run --hours 4)",
       "Bash(python src/fetch_and_triage.py --dry-run)",
-      "Bash(python -c \":*)"
+      "Bash(python -c \":*)",
+      "Bash(ls:*)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''src''\\); import project_discover; print\\(''✓ Module imports OK''\\)\")",
+      "Bash(python src/project_discover.py --dry-run --hours 336)"
     ]
   }
 }

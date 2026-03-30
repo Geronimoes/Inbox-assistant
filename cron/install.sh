@@ -19,6 +19,8 @@ MORNING_BRIEFING="30 6 * * * cd $SCRIPT_DIR && $PYTHON src/fetch_and_triage.py >
 URGENT_CHECK="0 8-20/2 * * * cd $SCRIPT_DIR && $PYTHON src/urgent_check.py >> $LOG_DIR/urgent.log 2>&1"
 REGEN_STYLE="0 2 * * 0 cd $SCRIPT_DIR && $PYTHON src/fetch_and_triage.py --regenerate-style >> $LOG_DIR/style.log 2>&1"
 DASHBOARD="0 3 * * 0 cd $SCRIPT_DIR && $PYTHON src/dashboard.py >> $LOG_DIR/dashboard.log 2>&1"
+PROJECT_FETCH="0 20 * * * cd $SCRIPT_DIR && $PYTHON src/project_fetch.py >> $LOG_DIR/project-fetch.log 2>&1"
+PROJECT_DISCOVER="0 4 * * 0 cd $SCRIPT_DIR && $PYTHON src/project_discover.py >> $LOG_DIR/project-discover.log 2>&1"
 
 # Check if already installed
 EXISTING=$(crontab -l 2>/dev/null || true)
@@ -38,6 +40,8 @@ fi
   echo "$URGENT_CHECK"
   echo "$REGEN_STYLE"
   echo "$DASHBOARD"
+  echo "$PROJECT_FETCH"
+  echo "$PROJECT_DISCOVER"
 ) | crontab -
 
 echo "✓ Cron jobs installed:"
@@ -45,6 +49,8 @@ echo "  • Morning briefing:    6:30 AM daily"
 echo "  • Urgent checks:       every 2 hours, 8 AM–8 PM"
 echo "  • Style regeneration:  Sunday 2:00 AM"
 echo "  • Dashboard refresh:   Sunday 3:00 AM"
+echo "  • Project email fetch: 8:00 PM daily"
+echo "  • Project discovery:   Sunday 4:00 AM"
 echo ""
 echo "To adjust times, run: crontab -e"
 echo "To view logs:         tail -f $LOG_DIR/briefing.log"

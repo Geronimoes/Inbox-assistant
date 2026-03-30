@@ -102,7 +102,10 @@ data/weekly-stats.json
 | `python src/gmail_client.py --auth --headless` | Re-authenticate Gmail OAuth | When token expires |
 | `python src/project_fetch.py --all --dry-run` | Preview project email archive | Testing |
 | `python src/project_fetch.py --all` | Backfill all project emails | Initial setup / retroactive |
-| `python src/project_fetch.py` | Incremental project email archive | Optional daily cron |
+| `python src/project_fetch.py` | Incremental project email archive | Cron 20:00 daily |
+| `python src/project_discover.py --dry-run` | Preview project suggestions | Testing |
+| `python src/project_discover.py` | Discover and email new project suggestions | Cron Sunday 04:00 |
+| `python src/project_discover.py --hours 4320` | Retroactive discovery (6 months) | One-off deep scan |
 
 Always activate the virtualenv first: `source env/bin/activate`
 
@@ -147,6 +150,8 @@ The VPS has no browser. Authentication requires SSH port forwarding via Tailscal
 | Add a new project to archive | Add an entry to `projects:` in `config.yaml` (see README) |
 | Initial project email backfill | `python src/project_fetch.py --all` |
 | Re-export a project from scratch | Delete its entry from `data/project-export-state.json`, then run `--all` |
+| Discover new projects to archive | `python src/project_discover.py --dry-run` (or wait for Sunday email) |
+| Retroactive project discovery | `python src/project_discover.py --hours 4320` (6 months lookback) |
 
 ---
 
@@ -162,6 +167,7 @@ llm:
     summarization:    {provider: anthropic, model: claude-haiku-4-5-20251001}
     style_profile:    {provider: anthropic, model: claude-haiku-4-5-20251001}
     attachment_classify: {provider: anthropic, model: claude-haiku-4-5-20251001}
+    project_discovery:   {provider: anthropic, model: claude-sonnet-4-6}
 ```
 
 Never silently fall back to a different provider — fail loudly with a named error if a key is missing.
@@ -182,8 +188,10 @@ Never silently fall back to a different provider — fail loudly with a named er
 ```
 30 6     * * *  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py
 0  8-20/2 * * * cd /home/jeroen/projects/inbox-assistant && env/bin/python src/urgent_check.py
+0  20    * * *  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_fetch.py
 0  2     * * 0  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --regenerate-style
 0  3     * * 0  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/dashboard.py
+0  4     * * 0  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_discover.py
 ```
 
 ---
