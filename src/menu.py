@@ -132,6 +132,10 @@ def main():
     else:
         inbox_script = (pathlib.Path(__file__).parent.parent / "inbox").resolve()
 
+    # Ensure cwd is the project root so relative cmd paths work even when
+    # this script is invoked directly rather than through the bash wrapper.
+    os.chdir(pathlib.Path(__file__).parent.parent)
+
     numbered, menu_text = _build_index()
 
     while True:
