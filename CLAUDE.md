@@ -53,6 +53,8 @@ fetch_and_triage.py  (cron 06:30, venv python)
 | `writing-samples/style-profile.md` | LLM-generated weekly style guide. |
 | `attachments/` | Saved email attachments, sorted by type. |
 | `data/` | `processed.json` (thread state) and `weekly-stats.json` (dashboard data). |
+| `{vault}/TASKS.md` | Master task list in Obsidian vault (auto-generated, user-editable). |
+| `{vault}/Tasks/` | Per-project and complex task detail files (auto-generated). |
 | `logs/` | Cron output logs. |
 | `dashboard/` | Local copy of generated HTML (also written to Caddy sites directory). |
 | `n8n/` | n8n workflow JSON files — future use, not currently active. |
@@ -96,15 +98,18 @@ data/weekly-stats.json
 |---------|---------|-------------|
 | `python src/fetch_and_triage.py --dry-run` | Full triage, no side effects | Testing |
 | `python src/fetch_and_triage.py` | Full production run | Cron 06:30 |
+| `python src/fetch_and_triage.py --mini` | Afternoon update (compact email, no Obsidian note) | Cron 13:00 + 17:00 Mon–Fri |
 | `python src/fetch_and_triage.py --regenerate-style` | Rebuild writing style profile | Cron Sunday 02:00 |
 | `python src/urgent_check.py` | Check for urgent items only | Cron every 2 hrs 08:00–20:00 |
-| `python src/dashboard.py` | Regenerate dashboard HTML | Cron Sunday 03:00 |
+| `python src/dashboard.py` | Regenerate dashboard HTML | Cron 06:45 daily |
 | `python src/gmail_client.py --auth --headless` | Re-authenticate Gmail OAuth | When token expires |
 | `python src/project_fetch.py --all --dry-run` | Preview project email archive | Testing |
 | `python src/project_fetch.py --all` | Backfill all project emails | Initial setup / retroactive |
-| `python src/project_fetch.py` | Incremental project email archive | Cron 20:00 daily |
+| `python src/project_fetch.py` | Incremental project email archive | Cron hourly 08:30–20:30 |
 | `python src/project_discover.py --dry-run` | Preview project suggestions | Testing |
 | `python src/project_discover.py` | Discover and email new project suggestions | Cron Sunday 04:00 |
+| `python src/draft_on_demand.py` | Process on-demand draft requests | Cron every 2 min Mon–Fri 08:00–20:00 |
+| `python src/draft_on_demand.py --dry-run` | Preview draft requests | Testing |
 | `python src/project_discover.py --hours 4320` | Retroactive discovery (6 months) | One-off deep scan |
 
 Always activate the virtualenv first: `source env/bin/activate`
@@ -146,6 +151,9 @@ The VPS has no browser. Authentication requires SSH port forwarding via Tailscal
 | Re-authenticate Gmail | `python src/gmail_client.py --auth --headless` (see above) |
 | Change Obsidian briefing format | Edit `briefing.py` → `generate_markdown()` |
 | Change HTML briefing format | Edit `briefing.py` → `_render_section()` |
+| Enable task extraction | Set `tasks.enabled: true` in `config.yaml` |
+| Change task file location | Edit `tasks.obsidian_file` / `tasks.detail_folder` in `config.yaml` |
+| Request an on-demand draft | Forward email to `jeroenm+draft@gmail.com` (processed within 2 min) |
 | Process old emails retroactively | `python src/fetch_and_triage.py --hours 336 --no-drafts` |
 | Add a new project to archive | Add an entry to `projects:` in `config.yaml` (see README) |
 | Initial project email backfill | `python src/project_fetch.py --all` |
@@ -186,12 +194,15 @@ Never silently fall back to a different provider — fail loudly with a named er
 ## Cron Schedule
 
 ```
-30 6     * * *  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py
-0  8-20/2 * * * cd /home/jeroen/projects/inbox-assistant && env/bin/python src/urgent_check.py
-0  20    * * *  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_fetch.py
-0  2     * * 0  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --regenerate-style
-0  3     * * 0  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/dashboard.py
-0  4     * * 0  cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_discover.py
+30 6     * * *     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py
+0  13    * * 1-5   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --mini
+0  17    * * 1-5   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --mini
+0  8-20/2 * * *   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/urgent_check.py
+45 6     * * *     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/dashboard.py
+30 8-20/1 * * *   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_fetch.py
+0  2     * * 0     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --regenerate-style
+0  4     * * 0     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_discover.py
+*/2 8-20 * * 1-5   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/draft_on_demand.py
 ```
 
 ---

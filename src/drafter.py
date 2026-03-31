@@ -37,9 +37,20 @@ class DraftComposer:
         # If no style profile yet, remove the placeholder cleanly
         return base_prompt.replace("{STYLE_PROFILE}", "")
 
-    def compose_draft(self, email: dict, classification: dict) -> str | None:
+    def compose_draft(self, email: dict, classification: dict,
+                      thread_context: list[dict] | None = None,
+                      project_context: str | None = None) -> str | None:
         """Compose a draft reply for a single email.
-        
+
+        Args:
+            email:           The email to reply to.
+            classification:  Classification result for this email.
+            thread_context:  Optional list of earlier messages in the thread
+                             (from gmail_client.fetch_thread). Provides
+                             conversation history for more informed replies.
+            project_context: Optional text with recent project correspondence
+                             (from Obsidian vault). Provides broader context.
+
         Returns the draft text, or None if no draft is needed.
         """
         if not classification.get("needs_draft", False):
@@ -49,12 +60,42 @@ class DraftComposer:
         language = classification.get("reply_language", "en")
         suggested_action = classification.get("suggested_action", "")
 
+        # Build thread context section if available
+        thread_section = ""
+        if thread_context:
+            thread_parts = []
+            for msg in thread_context:
+                # Skip the current email itself
+                if msg.get("id") == email.get("id"):
+                    continue
+                thread_parts.append(
+                    f"From: {msg['from']}\n"
+                    f"Date: {msg['date']}\n"
+                    f"{msg.get('body_text', msg.get('snippet', ''))[:1500]}\n"
+                )
+            if thread_parts:
+                thread_section = (
+                    "\n**Earlier messages in this thread (oldest first):**\n\n"
+                    + "\n---\n".join(thread_parts)
+                    + "\n---\n\n"
+                )
+
+        # Build project context section if available
+        project_section = ""
+        if project_context:
+            project_section = (
+                "\n**Recent project correspondence for additional context:**\n\n"
+                f"{project_context[:3000]}\n\n---\n\n"
+            )
+
         user_message = (
             f"Draft a reply to this email.\n\n"
             f"**Tone:** {tone}\n"
             f"**Language:** {'Dutch' if language == 'nl' else 'English'}\n"
             f"**Suggested action:** {suggested_action}\n\n"
-            f"**Original email:**\n"
+            f"{thread_section}"
+            f"{project_section}"
+            f"**Email to reply to:**\n"
             f"From: {email['from']}\n"
             f"Subject: {email['subject']}\n"
             f"Date: {email['date']}\n\n"

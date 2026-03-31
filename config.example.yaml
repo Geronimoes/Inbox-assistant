@@ -215,3 +215,23 @@ projects:
     # scan_labels:                       # Optional: override global gmail.scan_labels
     #   - "_UCM-redirect"
     #   - "INBOX"
+
+# ── Task extraction to Obsidian ─────────────────────────
+# Extracts tasks from classified emails and writes to a TASKS.md file in
+# the Obsidian vault. Complex tasks get step-by-step breakdowns in a
+# Tasks/ subfolder.
+tasks:
+  enabled: false                         # Set to true to enable
+  obsidian_file: "TASKS.md"             # Master task file, relative to vault root
+  detail_folder: "Tasks"                # Folder for per-project and complex task files
+  include_in_briefing: true             # Show task summary in daily briefing
+  completed_retention_days: 7           # Days to keep completed tasks before pruning
+
+# ── On-demand draft generation ──────────────────────────
+# Forward any email to you+draft@gmail.com to get a draft reply emailed
+# to your work address within 2 minutes. Requires a Gmail filter:
+#   to:you+draft@gmail.com → apply label _draft-request, skip inbox
+draft_on_demand:
+  enabled: false                         # Set to true to enable
+  label: "_draft-request"               # Gmail label to watch
+  send_to: "you@university.edu"         # Where to email the draft reply

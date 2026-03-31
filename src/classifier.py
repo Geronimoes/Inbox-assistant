@@ -13,12 +13,16 @@ from pathlib import Path
 class EmailClassifier:
     """Classify emails using the configured LLM provider."""
 
-    def __init__(self, llm_client):
+    def __init__(self, llm_client, projects: list[dict] | None = None):
         """
         Args:
             llm_client: An LLMClient instance from llm_client.py.
+            projects:   Optional list of project dicts from config.yaml.
+                        Used to inject project IDs into the classification
+                        prompt so the LLM can tag tasks by project.
         """
         self.llm = llm_client
+        self.projects = projects or []
         self.classify_prompt = self._load_prompt("classify.md")
 
     def _load_prompt(self, filename: str) -> str:
@@ -58,10 +62,24 @@ class EmailClassifier:
             }
             email_summaries.append(summary)
 
+        # Build project reference for task tagging
+        project_ref = ""
+        if self.projects:
+            proj_lines = []
+            for p in self.projects:
+                keywords = ", ".join(p.get("keywords", []))
+                proj_lines.append(f"- {p['id']}: {p.get('name', p['id'])} — keywords: {keywords}")
+            project_ref = (
+                "\n\nAvailable projects for task tagging "
+                "(use the id string in the tasks.project field):\n"
+                + "\n".join(proj_lines) + "\n"
+            )
+
         user_message = (
             f"Classify the following {len(emails)} emails. "
             f"Return ONLY a JSON array with no other text.\n\n"
             f"Emails:\n{json.dumps(email_summaries, indent=2)}"
+            f"{project_ref}"
         )
 
         response_text = self.llm.complete(
@@ -92,6 +110,7 @@ class EmailClassifier:
                     "draft_tone": "professional",
                     "reply_language": "en",
                     "deadline": None,
+                    "tasks": [],
                 }
                 for e in emails
             ]

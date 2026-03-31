@@ -1,0 +1,2269 @@
+ ▐▛███▜▌   Claude Code v2.1.88
+▝▜█████▛▘  Sonnet 4.6 · API Usage Billing
+  ▘▘ ▝▝    ~/projects/inbox-assistant
+
+  ↑ Opus now defaults to 1M context · 5x more room, same pricing
+
+  /remote-control is active. Code in CLI or at
+  https://claude.ai/code/session_015LRY8rqbC9sG1H7KjY22cy
+  ⎿ Please upgrade to the latest version of the Claude mobile app to see your 
+  Remote Control sessions.
+
+❯ /model                                                                        
+  ⎿  Set model to Opus 4.6
+
+❯ Welcome back to the inbox-assistant project. The system is working well,      
+after using it for a few days. The new projects feature we built most recently  
+is also proving useful, and I've been using another Claude Code session within  
+my Obsidian vault (let's call that session "Email Assistant") where those       
+emails get sort according to project, which has been helpful to understand      
+context when necessary. I've also adjusted the crontab entries to run more      
+regularly for some tasks. Next, I'd like to explore a few things. Below are     
+some thoughts, in no particular order (so feel free to propose a prioritized    
+action plan, if needed):                                                        
+                                                                                
+1. Check my current crontab entries, advise on those, and if needed change the  
+crontab setup script and documentation mentioning these.                        
+2. On email processing: could you briefly explain the current pipeline to me    
+again first, and reflect on whether anything could be improved there from what  
+we have now? For instance, do all emails get sent to the Claude api in full, or 
+ is there a cheaper first pass to see which emails require a response in the    
+first place?                                                                    
+3. One thing I've been thinking is that I get draft email responses once per    
+day in the morning, but that creates a delay of one full day for messages that  
+come in during the day. Often, I will have already responded to them myself in  
+that case, or have to run the project import manually and then ask the Mail     
+Assistant to draft a response (a Claude skill I've set up there which also      
+looks at earlier email correspondence in that thread/project). Perhaps we could 
+ make that more proactive somehow without incurring too much in additional      
+Claude api costs?                                                               
+4. Many emails will implicitly or explicitly constitute a task I will need to   
+do. Currently, those tend to get mentioned in the daily briefing, but that      
+still keeps them somewhat fleeting/transient. Perhaps we could maintain a       
+structured overview of tasks / Todo's in my Obsidian vault somewhere as well    
+where I can then mark them as done or add additional tasks that belong there    
+that don't come from email but from memory, conversations, or elsewhere. Where  
+projects are defined within inbox-assistant, perhaps that can provide another   
+way to create structure and oversight / contextual awareness? And for more      
+complex tasks, perhaps a brief step-by-step instruction could be included for   
+me to break them down? And perhaps at a later point such a task list could be   
+integrated with the BCC feedback loop we were considering earlier?              
+
+● Great to hear the system is working well! Let me explore the current state of
+  things to give you informed answers on all four points.
+
+● 3 Explore agents finished (ctrl+o to expand)
+   ├─ Explore email processing pipeline · 17 tool uses · 43.8k tokens
+   │  ⎿  Done
+   ├─ Check crontab and project config · 7 tool uses · 15.4k tokens
+   │  ⎿  Done
+   └─ Explore briefing and Obsidian integration · 23 tool uses · 57.0k tokens
+      ⎿  Done
+
+● Good, I have a thorough picture now. Let me design an implementation plan
+  based on all findings.
+
+● Plan(Design implementation plan)
+  ⎿  Done (24 tool uses · 58.5k tokens · 4m 29s)
+  (ctrl+o to expand)
+
+● Now let me read a few critical files to validate specific details before
+  writing the final plan.
+
+  Read 3 files (ctrl+o to expand)
+
+● Good — I now have a thorough picture of everything. Before I write the final
+  plan, let me clarify a few things with you.
+
+  First, a quick recap of what I found:
+
+  Your current crontab vs docs: Two changes you made aren't reflected in the
+  docs yet:
+  - Dashboard: now runs daily at 06:45 (docs say Sunday 03:00)
+  - Project fetch: now runs hourly 08:30–20:30 (docs say daily 20:00)
+
+  Pipeline efficiency: The current setup is already very cost-effective. Haiku
+  classification of ~50 emails/day costs roughly $0.005/day. Sonnet drafts for
+  ~15 emails add ~$0.03/day. Total: ~$15–20/year. A pre-filter to skip NOISE
+  before classification would save about $0.72/year — not worth the complexity.
+
+  On proactive drafts: The main idea is to add 1–2 afternoon triage runs (e.g.,
+  13:00 and 17:00 weekdays) with a --mini flag that sends a shorter update email
+   with just the new items + drafts, without overwriting the morning Obsidian
+  note. Optionally, also extend urgent_check.py to generate a draft for truly
+  URGENT emails so you get a draft within 2 hours.
+
+  On task extraction: The plan is to extend the classification prompt to also
+  extract tasks, then write them to a single inbox-tasks.md in your Obsidian
+  vault, organized by project headings. Append-only so your manual edits
+  (checking things off) are preserved.
+
+● User answered Claude's questions:
+  ⎿  · For afternoon triage runs: should these send a briefing email to your UCM
+      address, a Telegram message, or both? → Email only, but perhaps there is 
+     (additionally?) a way to trigger a draft on any message I get when I 
+     forward it to a specific email address (like jeroenm+draft@gmail.com, for 
+     instance) or trigger a draft response some other way? In the case of 
+     defined projects in particular (but really ideally for any message, even 
+     outside of defined projects), it would be great for the draft response 
+     writing to be able to use earlier email context from the same message 
+     thread or person.
+     · For the Obsidian task file, where should it live in your vault? → How 
+     about TASKS.md in the Vault root, which optionally links to more context 
+     (eg for more complex tasks or per project) in /Tasks? The TASKS.md (and 
+     optional files in /Tasks) could optionally use Obsidian note links to 
+     relevant files if they are stored elsewhere too (such as in 
+     /inbox-briefings, /inbox-projects, /Wicked Problems, etc.)
+     · Should the task list include ALL action items from emails, or only items 
+     with explicit deadlines or concrete follow-ups? → All of them, but ideally 
+     we think of a way to make this less noisy: identifying urgent from 
+     non-urgent, explicit tasks vs general actions, etc. And ideally include the
+      deadline information where available, as well as a time-estimate for each 
+     task, where possible.
+
+● Excellent feedback — those are all great refinements. The on-demand draft
+  trigger via email forwarding is a particularly clever idea. Let me now write
+  the full plan.
+
+  Searched for 1 pattern, read 3 files (ctrl+o to expand)
+
+● Now let me check if there's any thread-fetching capability in gmail_client.
+
+  Read 1 file (ctrl+o to expand)
+
+● Good — no existing thread-fetching method in gmail_client. That'll need to be
+  added for the on-demand draft feature. Now I have everything I need to write
+  the plan.
+
+● Updated plan
+  ⎿  /plan to preview
+  ⎿  Tool use rejected
+
+● Good points. Let me update the plan with those changes.
+
+  For push-based triggering, there are a few realistic options:
+
+  1. Gmail Pub/Sub push — Gmail's API supports watch() which pushes
+  notifications via Google Cloud Pub/Sub. Near-instant, but requires GCP Pub/Sub
+   setup.
+  2. n8n workflow — A Gmail trigger node watching the _draft-request label,
+  calling draft_on_demand.py directly. n8n polls every 1-2 minutes by default.
+  3. Frequent cron (every 2 min) — A */2 * * * * cron job. Simple, no new
+  infrastructure. The Gmail API call to check one label is extremely
+  lightweight.
+  4. Systemd timer/service — A small daemon polling every 60 seconds. More
+  responsive than cron, cleaner than a full n8n workflow.
+
+❯ Sounds great! Minor points:                                                   
+                                                                                
+1. "Saves the draft as a Gmail draft (in-thread) and sends a Telegram           
+notification" -> instead, when I menaullt request a draft, email the draft to   
+me at Jeroen.moes@maastrichtuniversity.nl, and no Telegram notification.        
+                                                                                
+2. When I manually request a draft (via jeroenm+draft@gmail.com or through      
+another method you would propose), could we find a way to have this trigger     
+directly rather than on a 30 minute cron timer? For instance, could such emails 
+ be pushed rather than polled? Perhaps via n8n if necessary?                    
+
+● User answered Claude's questions:
+  ⎿  · How should we trigger on-demand draft generation when you forward to 
+     jeroenm+draft@gmail.com? → Frequent cron (Recommended)
+
+● Good — frequent cron it is. Let me update the plan with both refinements
+  (email delivery to UCM address, 2-minute cron polling).
+
+  Read 1 file (ctrl+o to expand)
+
+● Updated plan
+  ⎿  /plan to preview
+
+● Now let me also update the verification section to match.
+
+● Updated plan
+  ⎿  /plan to preview
+● User approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/concurrent-skipping-garden.md · /plan to 
+     edit
+     Inbox Assistant — Improvement Plan
+
+     Context
+
+     The inbox-assistant is working well after a few days of daily use. Jeroen
+     has identified four areas for improvement:
+     1. Crontab documentation has drifted from actual schedule
+     2. Pipeline efficiency could be reviewed (verdict: already efficient)
+     3. Draft responses come too late for emails arriving during the day
+     4. Email-derived tasks are transient — they need a persistent home in
+     Obsidian
+
+     This plan addresses all four, ordered by dependency and impact.
+
+     ---
+     Phase 1: Crontab Documentation Sync
+
+     Why: Two cron jobs have been changed by Jeroen but docs still show old
+     schedules.
+
+     ┌──────────────┬───────────────────────┬──────────────────────────────────┐
+     │     Job      │      Documented       │              Actual              │
+     ├──────────────┼───────────────────────┼──────────────────────────────────┤
+     │ Dashboard    │ 0 3 * * 0 (Sunday     │ 45 6 * * * (daily 06:45)         │
+     │              │ 03:00)                │                                  │
+     ├──────────────┼───────────────────────┼──────────────────────────────────┤
+     │ Project      │ 0 20 * * * (daily     │ 30 8-20/1 * * * (hourly          │
+     │ fetch        │ 20:00)                │ 08:30–20:30)                     │
+     └──────────────┴───────────────────────┴──────────────────────────────────┘
+
+     Files to update:
+     - cron/install.sh — update the two cron expressions + echo messages
+     - CLAUDE.md — update Cron Schedule section and Entry Points table
+     - README.md — update cron table (add project_fetch + project_discover rows
+     if missing)
+
+     ---
+     Phase 2: Pipeline Efficiency (No Code Changes)
+
+     Verdict: Current pipeline is already cost-effective.
+     - Haiku classification of ~50 emails/day: ~$0.005/day
+     - Sonnet drafts for ~15 emails: ~$0.03/day
+     - Total: ~$15–20/year
+
+     A rule-based pre-filter to skip NOISE would save ~$0.72/year — not worth
+     the complexity. No changes needed.
+
+     ---
+     Phase 3: Proactive Draft Responses
+
+     Two sub-features: scheduled afternoon triage + on-demand drafts via email
+     forwarding.
+
+     3A: Afternoon Triage Runs (--mini flag)
+
+     Problem: Drafts only generated at 06:30. Emails arriving during the day are
+      delayed ~24h.
+
+     Solution: Add a --mini flag to fetch_and_triage.py that:
+     - Runs the full pipeline (fetch → classify → draft) for new emails only
+     (dedup already works)
+     - Sends a shorter "Inbox Update" email (no noise section, compact format)
+     - Skips overwriting the morning Obsidian daily note
+     - Sends a Telegram notification if there are new ACTION/URGENT items
+
+     Cron schedule: Add two weekday afternoon runs:
+     0 13 * * 1-5  ... fetch_and_triage.py --mini
+     0 17 * * 1-5  ... fetch_and_triage.py --mini
+
+     Files to modify:
+     - src/fetch_and_triage.py — add --mini argument; conditionally skip
+     Obsidian note; use generate_mini() for briefing
+     - src/briefing.py — add generate_mini() and generate_mini_markdown()
+     methods (compact HTML/text with just new items)
+     - src/notifier.py — add send_update_summary() method for afternoon Telegram
+      pings
+     - cron/install.sh — add afternoon cron entries
+     - CLAUDE.md — document --mini flag
+
+     3B: On-Demand Draft via Email Forwarding
+
+     Problem: Sometimes Jeroen needs a draft NOW for a specific email, without
+     waiting for the next scheduled run.
+
+     Solution: A new draft_on_demand.py script that:
+     1. Monitors a Gmail label (e.g., _draft-request) for emails forwarded to
+     jeroenm+draft@gmail.com
+     2. For each found email, extracts the original message and fetches the full
+      thread context from Gmail
+     3. If the email matches a configured project, also loads recent project
+     emails from the Obsidian vault for additional context
+     4. Generates a context-aware draft reply using Sonnet
+     5. Emails the draft to jeroen.moes@maastrichtuniversity.nl (same as
+     briefings) — no Telegram, no Gmail draft
+     6. Removes the _draft-request label so the email isn't re-processed
+
+     Gmail setup required: Create a filter: to:jeroenm+draft@gmail.com → apply
+     label _draft-request, skip inbox.
+
+     New Gmail method needed: fetch_thread(thread_id) — fetches all messages in
+     a thread to provide conversation context to the drafter.
+
+     Thread context for the drafter: The compose_draft() method needs an
+     optional thread_context parameter — earlier messages in the thread, so the
+     draft can reference prior conversation. For project-matched emails, also
+     include recent project vault emails (read from Obsidian markdown files) as
+     additional context.
+
+     Cron schedule: Every 2 minutes during work hours (lightweight — just a
+     label check when no requests pending):
+     */2 8-20 * * 1-5  ... draft_on_demand.py
+
+     Files to create:
+     - src/draft_on_demand.py — new script (~120 lines)
+
+     Files to modify:
+     - src/gmail_client.py — add fetch_thread(thread_id) method; add
+     remove_label(message_id, label) method
+     - src/drafter.py — extend compose_draft() to accept optional thread_context
+      and project_context parameters, include them in the LLM prompt
+     - config.yaml — add draft_on_demand: section (enabled, label, notification
+     method)
+     - CLAUDE.md — document the feature + Gmail filter setup
+
+     ---
+     Phase 4: Task Extraction to Obsidian
+
+     Task File Structure
+
+     Master file: ~/syncthing/data/Notes/TASKS.md
+     - Overview of all active tasks, organized by section
+     - Links to project-specific or complex task detail files in /Tasks/
+     - Links to relevant briefings, project folders, etc.
+
+     Detail folder: ~/syncthing/data/Notes/Tasks/
+     - Per-project task context files (e.g., Tasks/capstone.md) — auto-created
+     when a project has tasks
+     - Complex task breakdowns (e.g., Tasks/osa-course-planning.md) —
+     auto-created for tasks identified as complex
+
+     TASKS.md Format
+
+     ---
+     tags:
+       - inbox-tasks
+     last_updated: 2026-03-31
+     ---
+
+     # Inbox Tasks
+
+     ## ⚡ Urgent
+
+     - [ ] Reply to Margaux about submission deadline — _due today_ ⏱ 10 min
+       - From: [[2026-03-31]] — Margaux Bermudes
+       - Project: [[Capstone|capstone]]
+       - See also: [[Tasks/capstone|capstone tasks]]
+
+     ## 📋 Action Required
+
+     - [ ] Complete OSA course planning form for period 6 — _due 2026-04-10_ ⏱ 
+     45 min
+       - From: [[2026-03-31]] — OSA
+       - [[Tasks/osa-course-planning|Step-by-step breakdown →]]
+     - [ ] Confirm April 6 meeting with Annechien (10:30 Teams) ⏱ 5 min
+       - From: [[2026-03-31]] — Annechien Deelman
+       - Project: [[Wicked Problems|wicked-problems]]
+
+     ## ✅ Recently Completed
+     <!-- Tasks checked off are moved here automatically, kept for 7 days -->
+
+     - [x] Review capstone ethics form for Anna _(completed 2026-03-29)_
+
+     Complex Task Detail File Example (Tasks/osa-course-planning.md)
+
+     ---
+     tags: [inbox-task-detail]
+     source_briefing: "[[2026-03-31]]"
+     project: null
+     created: 2026-03-31
+     ---
+
+     # OSA Course Planning Form — Period 6
+
+     **Source:** Email from OSA, 2026-03-31
+     **Deadline:** 2026-04-10
+     **Estimated time:** 45 min
+
+     ## Steps
+
+     1. Check current course catalogue entry for accuracy
+     2. Confirm teaching schedule with department coordinator
+     3. Submit form via [PLACEHOLDER: OSA portal link]
+     4. Notify co-instructor if applicable
+
+     Per-Project Task File Example (Tasks/capstone.md)
+
+     ---
+     tags: [inbox-task-detail, project/capstone]
+     project: capstone
+     last_updated: 2026-03-31
+     ---
+
+     # Capstone Tasks
+
+     Active tasks for [[Capstone]] (CAP3200).
+
+     - [ ] Reply to Margaux about submission issue — _due today_
+       - [[2026-03-31]] — see briefing for full context
+     - [ ] Schedule mid-term feedback sessions with students ⏱ 30 min
+       - [[2026-03-29]]
+
+     Implementation
+
+     Step 4A: Extend classification prompt
+
+     Add a tasks array to the classification JSON output in prompts/classify.md:
+
+     {
+       "email_id": "...",
+       ...existing fields...,
+       "tasks": [
+         {
+           "description": "Reply to Margaux about submission deadline",
+           "task_type": "explicit",
+           "deadline": "2026-03-31",
+           "time_estimate_minutes": 10,
+           "complexity": "simple",
+           "project": "capstone"
+         }
+       ]
+     }
+
+     - task_type: "explicit" (email directly asks for something) vs "implicit"
+     (a response/action is expected but not explicitly requested)
+     - complexity: "simple" (one-step) vs "complex" (multi-step, generates a
+     detail file with steps)
+     - project: matches a project id from config, or null
+     - time_estimate_minutes: rough estimate for planning
+     - Only extracted for URGENT and ACTION emails (not FYI/NOISE)
+
+     Step 4B: Inject project list into classifier
+
+     Modify src/classifier.py → _classify_single_batch() to append a project
+     reference list to the user message:
+
+     Available projects for task tagging:
+     - capstone: Capstone (CAP3200) — keywords: Capstone, CAP3200
+     - wicked-problems: Wicked Problems — keywords: PRO3030, Wicked
+     ...
+
+     Built dynamically from config.yaml projects at runtime.
+
+     Step 4C: Create src/task_writer.py
+
+     New module (~200 lines) with class TaskWriter:
+
+     - __init__(config) — reads vault_path, loads project list
+     - extract_tasks(classifications) — pulls task dicts from classification
+     results
+     - write_tasks(tasks) — main method:
+       a. Read existing TASKS.md (or create from template)
+       b. Parse into sections (Urgent / Action Required / Recently Completed)
+       c. Check for duplicate tasks (match on description + date within same
+     project)
+       d. Append new tasks to the correct section, with Obsidian links
+       e. For tasks with complexity: "complex", generate and write a detail file
+      to Tasks/
+       f. For projects with tasks, create/update Tasks/{project_id}.md
+       g. Move tasks checked [x] by Jeroen to "Recently Completed" section
+       h. Prune completed tasks older than 7 days
+       i. Write atomically (.tmp → rename)
+     - _generate_complex_breakdown(task, email) — uses Haiku to generate
+     step-by-step breakdown for complex tasks (separate cheap LLM call)
+
+     Key safety rules:
+     - Never delete or modify existing unchecked task lines — only append new
+     ones
+     - Detect [x] checkboxes (manual completions by Jeroen) and move them to
+     completed
+     - Preserve any manual notes Jeroen adds under task items
+     - Create Tasks/ directory on first use
+
+     Step 4D: Integrate into fetch_and_triage.py
+
+     After classification (step 4) and before briefing (step 7), add:
+
+     # ── 4b. Extract and write tasks ────────────────────────
+     if config.get("tasks", {}).get("enabled", False):
+         from task_writer import TaskWriter
+         task_writer = TaskWriter(config, llm_client=llm)
+         new_tasks = task_writer.extract_tasks(classifications)
+         if new_tasks and not args.dry_run:
+             task_writer.write_tasks(new_tasks)
+             print(f"  {len(new_tasks)} task(s) added to TASKS.md")
+
+     Also integrate with --mini runs so afternoon tasks get added too.
+
+     Step 4E: Add task summary to daily briefing
+
+     In src/briefing.py, add a "Today's Tasks" section to both HTML and Markdown
+      output:
+
+     ## 📌 Tasks Extracted
+
+     - [ ] Reply to Margaux about submission deadline — _due today_ ⏱ 10 min
+     - [ ] Complete OSA form — _due Apr 10_ ⏱ 45 min
+     - [ ] Confirm meeting with Annechien ⏱ 5 min
+
+     _Full task list: [[TASKS]]_
+
+     Step 4F: Config addition
+
+     tasks:
+       enabled: true
+       obsidian_file: "TASKS.md"        # relative to vault root
+       detail_folder: "Tasks"           # relative to vault root
+       include_in_briefing: true
+       completed_retention_days: 7
+
+     Files to create:
+     - src/task_writer.py
+
+     Files to modify:
+     - prompts/classify.md — add tasks field to output schema + instructions
+     - src/classifier.py — inject project list into classification prompt
+     - src/fetch_and_triage.py — integrate TaskWriter
+     - src/briefing.py — add task summary section
+     - config.yaml — add tasks: section
+     - CLAUDE.md — document the feature
+
+     ---
+     Implementation Order
+
+     1. Phase 1 — Crontab doc sync (quick, no code changes)
+     2. Phase 3A — --mini flag + afternoon cron (moderate, standalone value)
+     3. Phase 4A–4F — Task extraction system (biggest feature, most value)
+     4. Phase 3B — On-demand draft via email forward (builds on drafter
+     improvements from Phase 4)
+
+     Phase 2 requires no changes.
+
+     ---
+     Verification Plan
+
+     Phase 1
+
+     - Run cron/install.sh and compare installed crontab with expected output
+     - Verify CLAUDE.md and README match actual crontab
+
+     Phase 3A
+
+     - python src/fetch_and_triage.py --mini --dry-run — verify compact briefing
+      output
+     - Check that no Obsidian note is written in mini mode
+     - Verify dedup works (morning emails aren't re-classified)
+
+     Phase 3B
+
+     - Forward a test email to jeroenm+draft@gmail.com
+     - Run python src/draft_on_demand.py --dry-run
+     - Verify thread context is fetched and included in draft prompt
+     - Verify draft email is sent to UCM address (not saved as Gmail draft)
+
+     Phase 4
+
+     - python src/fetch_and_triage.py --dry-run — check that tasks appear in
+     classification output
+     - Verify TASKS.md is created with correct structure in Obsidian vault
+     - Verify complex tasks generate detail files in Tasks/
+     - Verify project tasks generate per-project files
+     - Manually check [x] a task in Obsidian, re-run, verify it moves to
+     "Recently Completed"
+     - Verify task summary appears in briefing email and Obsidian note
+
+● Plan approved. Let me start implementing. I'll follow the planned order: Phase
+   1 (docs) → Phase 3A (mini flag) → Phase 4 (tasks) → Phase 3B (on-demand
+  drafts).
+
+● Let me read the files I need to update for Phase 1.
+
+  Read 2 files (ctrl+o to expand)
+
+● Now I have all the files. Let me make the Phase 1 updates.
+
+● Update(cron/install.sh)
+  ⎿  Added 2 lines, removed 2 lines
+      18  MORNING_BRIEFING="30 6 * * * cd $SCRIPT_DIR && $PYTHON src/fetc
+          h_and_triage.py >> $LOG_DIR/briefing.log 2>&1"
+      19  URGENT_CHECK="0 8-20/2 * * * cd $SCRIPT_DIR && $PYTHON src/urge
+          nt_check.py >> $LOG_DIR/urgent.log 2>&1"
+      20  REGEN_STYLE="0 2 * * 0 cd $SCRIPT_DIR && $PYTHON src/fetch_and_
+          triage.py --regenerate-style >> $LOG_DIR/style.log 2>&1"
+      21 -DASHBOARD="0 3 * * 0 cd $SCRIPT_DIR && $PYTHON src/dashboard.py
+         - >> $LOG_DIR/dashboard.log 2>&1"                               
+      22 -PROJECT_FETCH="0 20 * * * cd $SCRIPT_DIR && $PYTHON src/project
+         -_fetch.py >> $LOG_DIR/project-fetch.log 2>&1"                  
+      21 +DASHBOARD="45 6 * * * cd $SCRIPT_DIR && $PYTHON src/dashboard.p
+         +y >> $LOG_DIR/dashboard.log 2>&1"                              
+      22 +PROJECT_FETCH="30 8-20/1 * * * cd $SCRIPT_DIR && $PYTHON src/pr
+         +oject_fetch.py >> $LOG_DIR/project-fetch.log 2>&1"             
+      23  PROJECT_DISCOVER="0 4 * * 0 cd $SCRIPT_DIR && $PYTHON src/proje
+          ct_discover.py >> $LOG_DIR/project-discover.log 2>&1"
+      24  
+      25  # Check if already installed
+
+● Update(cron/install.sh)
+  ⎿  Added 2 lines, removed 2 lines
+      48  echo "  • Morning briefing:    6:30 AM daily"
+      49  echo "  • Urgent checks:       every 2 hours, 8 AM–8 PM"
+      50  echo "  • Style regeneration:  Sunday 2:00 AM"
+      51 -echo "  • Dashboard refresh:   Sunday 3:00 AM"                 
+      52 -echo "  • Project email fetch: 8:00 PM daily"                  
+      51 +echo "  • Dashboard refresh:   6:45 AM daily"                  
+      52 +echo "  • Project email fetch: every hour, 8:30 AM–8:30 PM"    
+      53  echo "  • Project discovery:   Sunday 4:00 AM"
+      54  echo ""
+      55  echo "To adjust times, run: crontab -e"
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+       98  | `python src/fetch_and_triage.py` | Full production run | Cro
+           n 06:30 |
+       99  | `python src/fetch_and_triage.py --regenerate-style` | Rebuil
+           d writing style profile | Cron Sunday 02:00 |
+      100  | `python src/urgent_check.py` | Check for urgent items only |
+            Cron every 2 hrs 08:00–20:00 |
+      101 -| `python src/dashboard.py` | Regenerate dashboard HTML | Cron
+          - Sunday 03:00 |                                               
+      101 +| `python src/dashboard.py` | Regenerate dashboard HTML | Cron
+          + 06:45 daily |                                                
+      102  | `python src/gmail_client.py --auth --headless` | Re-authenti
+           cate Gmail OAuth | When token expires |
+      103  | `python src/project_fetch.py --all --dry-run` | Preview proj
+           ect email archive | Testing |
+      104  | `python src/project_fetch.py --all` | Backfill all project e
+           mails | Initial setup / retroactive |
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      102  | `python src/gmail_client.py --auth --headless` | Re-authenti
+           cate Gmail OAuth | When token expires |
+      103  | `python src/project_fetch.py --all --dry-run` | Preview proj
+           ect email archive | Testing |
+      104  | `python src/project_fetch.py --all` | Backfill all project e
+           mails | Initial setup / retroactive |
+      105 -| `python src/project_fetch.py` | Incremental project email ar
+          -chive | Cron 20:00 daily |                                    
+      105 +| `python src/project_fetch.py` | Incremental project email ar
+          +chive | Cron hourly 08:30–20:30 |                             
+      106  | `python src/project_discover.py --dry-run` | Preview project
+            suggestions | Testing |
+      107  | `python src/project_discover.py` | Discover and email new pr
+           oject suggestions | Cron Sunday 04:00 |
+      108  | `python src/project_discover.py --hours 4320` | Retroactive 
+           discovery (6 months) | One-off deep scan |
+
+● Update(CLAUDE.md)
+  ⎿  Added 6 lines, removed 6 lines
+      186  ## Cron Schedule
+      187  
+      188  ```
+      189 -30 6     * * *  cd /home/jeroen/projects/inbox-assistant && en
+          -v/bin/python src/fetch_and_triage.py                          
+      190 -0  8-20/2 * * * cd /home/jeroen/projects/inbox-assistant && en
+          -v/bin/python src/urgent_check.py                              
+      191 -0  20    * * *  cd /home/jeroen/projects/inbox-assistant && en
+          -v/bin/python src/project_fetch.py                             
+      192 -0  2     * * 0  cd /home/jeroen/projects/inbox-assistant && en
+          -v/bin/python src/fetch_and_triage.py --regenerate-style       
+      193 -0  3     * * 0  cd /home/jeroen/projects/inbox-assistant && en
+          -v/bin/python src/dashboard.py                                 
+      194 -0  4     * * 0  cd /home/jeroen/projects/inbox-assistant && en
+          -v/bin/python src/project_discover.py                          
+      189 +30 6     * * *     cd /home/jeroen/projects/inbox-assistant &&
+          + env/bin/python src/fetch_and_triage.py                       
+      190 +0  8-20/2 * * *   cd /home/jeroen/projects/inbox-assistant && 
+          +env/bin/python src/urgent_check.py                            
+      191 +45 6     * * *     cd /home/jeroen/projects/inbox-assistant &&
+          + env/bin/python src/dashboard.py                              
+      192 +30 8-20/1 * * *   cd /home/jeroen/projects/inbox-assistant && 
+          +env/bin/python src/project_fetch.py                           
+      193 +0  2     * * 0     cd /home/jeroen/projects/inbox-assistant &&
+          + env/bin/python src/fetch_and_triage.py --regenerate-style    
+      194 +0  4     * * 0     cd /home/jeroen/projects/inbox-assistant &&
+          + env/bin/python src/project_discover.py                       
+      195  ```
+      196  
+      197  ---
+
+● Now update the README cron table.
+
+● Update(README.md)
+  ⎿  Added 3 lines, removed 1 line
+      105  |------|-----|---------|
+      106  | 06:30 daily | `fetch_and_triage.py` | Morning briefing |
+      107  | Every 2 hrs, 08:00–20:00 | `urgent_check.py` | Urgent alerts
+            |
+      108 +| 06:45 daily | `dashboard.py` | Refresh dashboard HTML |     
+      109 +| Every hour, 08:30–20:30 | `project_fetch.py` | Incremental p
+          +roject email archive |                                        
+      110  | Sunday 02:00 | `fetch_and_triage.py --regenerate-style` | Re
+           build writing style profile |
+      109 -| Sunday 03:00 | `dashboard.py` | Refresh dashboard HTML |    
+      111 +| Sunday 04:00 | `project_discover.py` | Discover new project 
+          +suggestions |                                                 
+      112  
+      113  ## Customisation
+      114  
+
+● Also update the README project_fetch cron reference that's lower in the file.
+
+● Update(README.md)
+  ⎿  Added 2 lines, removed 2 lines
+      235  Inline attachments (embedded signature images) are always filt
+           ered out
+      236  automatically regardless of `exclude_extensions`.
+      237  
+      238 -**Optional cron** (add manually once you're satisfied with the
+          - output):                                                     
+      238 +**Cron** (already installed — runs hourly during work hours): 
+      239  ```
+      240 -0 20 * * * cd /home/jeroen/projects/inbox-assistant && env/bin
+          -/python src/project_fetch.py >> logs/project-fetch.log 2>&1   
+      240 +30 8-20/1 * * * cd /home/jeroen/projects/inbox-assistant && en
+          +v/bin/python src/project_fetch.py >> logs/project-fetch.log 2>
+          +&1                                                            
+      241  ```
+      242  
+      243  > **Note:** The Gmail API returns at most 500 results per call
+           . For most projects
+
+● Phase 1 done. Now Phase 3A — adding the --mini flag for afternoon triage. Let
+  me read the full briefing.py first.
+  Read 1 file (ctrl+o to expand)
+
+● Now let me read notifier.py for the Telegram update method.
+
+  Read 1 file (ctrl+o to expand)
+
+● Good, I have all the context. Now let me implement Phase 3A. I need to:
+
+  1. Add generate_mini() to briefing.py
+  2. Add send_update_summary() to notifier.py
+  3. Add --mini flag to fetch_and_triage.py
+  4. Update cron/install.sh
+
+● Update(src/briefing.py)
+  ⎿  Added 2 lines, removed 1 line
+       1  """
+       2 -Morning briefing generator.                                    
+       2 +Briefing generator — morning briefing and afternoon mini-update
+         +s.                                                             
+       3  
+       4  Takes classified emails and draft replies, and produces:
+       5    - An HTML email (for Gmail send / fallback delivery)
+       6    - A Markdown daily note (for Obsidian vault, synced via Synct
+          hing)
+       7 +  - A compact "mini" briefing for afternoon update runs (--mini
+         + mode)                                                         
+       8  
+       9  The Obsidian note is written to:
+      10      {vault_path}/{briefing_folder}/YYYY-MM-DD.md
+
+● Now add the generate_mini() method and _make_mini_subject() to
+  BriefingGenerator, right before the Obsidian section.
+
+● Update(src/briefing.py)
+  ⎿  Added 86 lines
+      254          html += "</div>"
+      255          return html
+      256  
+      257 +    # ── Mini briefing (afternoon updates) ───────────────────
+          +─────────────────                                             
+      258 +                                                              
+      259 +    def generate_mini(self, classifications: list[dict],      
+      260 +                      drafts: list[dict],                     
+      261 +                      attachment_summaries: dict | None = None
+          +) -> tuple[str, str]:                                         
+      262 +        """Generate a compact afternoon update email.         
+      263 +                                                              
+      264 +        Only includes URGENT and ACTION items — no FYI, no noi
+          +se summary.                                                   
+      265 +        Used by --mini mode for mid-day triage runs.          
+      266 +                                                              
+      267 +        Returns (subject, html_body).                         
+      268 +        """                                                   
+      269 +        now = datetime.now(self.timezone)                     
+      270 +        date_str = now.strftime("%A %-d %B %Y")               
+      271 +        time_str = now.strftime("%H:%M")                      
+      272 +                                                              
+      273 +        urgent = [c for c in classifications if c["category"] 
+          +== "URGENT"]                                                  
+      274 +        action = [c for c in classifications if c["category"] 
+          +== "ACTION"]                                                  
+      275 +                                                              
+      276 +        draft_lookup = {d["email_id"]: d for d in drafts}     
+      277 +        att_lookup = attachment_summaries or {}               
+      278 +                                                              
+      279 +        total = len(urgent) + len(action)                     
+      280 +        subject = self._make_mini_subject(time_str, len(urgent
+          +), len(action))                                               
+      281 +                                                              
+      282 +        sections = []                                         
+      283 +                                                              
+      284 +        # Header                                              
+      285 +        sections.append(f"""                                  
+      286 +        <div style="font-family: -apple-system, BlinkMacSystem
+          +Font, 'Segoe UI',                                             
+      287 +                     Roboto, sans-serif; max-width: 600px; mar
+          +gin: 0 auto;                                                  
+      288 +                     color: #333; line-height: 1.5;">         
+      289 +        <h1 style="font-size: 18px; border-bottom: 2px solid #
+          +8b5cf6;                                                       
+      290 +                   padding-bottom: 8px; color: #1e293b;">     
+      291 +            📬 Inbox Update — {time_str}, {date_str}          
+      292 +        </h1>                                                 
+      293 +        <p style="color: #64748b; font-size: 14px;">          
+      294 +            {total} new item(s) since the morning briefing    
+      295 +        </p>                                                  
+      296 +        """)                                                  
+      297 +                                                              
+      298 +        if urgent:                                            
+      299 +            sections.append(self._render_section(             
+      300 +                "⚡ Needs attention today", urgent, draft_look
+          +up,                                                           
+      301 +                color="#dc2626", bg="#fef2f2", att_lookup=att_
+          +lookup                                                        
+      302 +            ))                                                
+      303 +                                                              
+      304 +        if action:                                            
+      305 +            sections.append(self._render_section(             
+      306 +                "📋 Reply needed", action, draft_lookup,      
+      307 +                color="#d97706", bg="#fffbeb", att_lookup=att_
+          +lookup                                                        
+      308 +            ))                                                
+      309 +                                                              
+      310 +        if not urgent and not action:                         
+      311 +            sections.append("""                               
+      312 +            <p style="color: #64748b; font-size: 14px; padding
+          +: 16px 0;">                                                   
+      313 +                No new items needing a reply. FYI and noise it
+          +ems will appear                                               
+      314 +                in tomorrow's morning briefing.               
+      315 +            </p>                                              
+      316 +            """)                                              
+      317 +                                                              
+      318 +        # Footer                                              
+      319 +        sections.append("""                                   
+      320 +        <hr style="border: none; border-top: 1px solid #e2e8f0
+          +; margin-top: 24px;">                                         
+      321 +        <p style="color: #94a3b8; font-size: 12px;">          
+      322 +            Afternoon update — Inbox Briefing Assistant.      
+      323 +            Draft replies are AI-generated suggestions — revie
+          +w before sending.                                             
+      324 +        </p>                                                  
+      325 +        </div>                                                
+      326 +        """)                                                  
+      327 +                                                              
+      328 +        return subject, "\n".join(sections)                   
+      329 +                                                              
+      330 +    def _make_mini_subject(self, time_str: str,               
+      331 +                           urgent_count: int, action_count: in
+          +t) -> str:                                                    
+      332 +        """Create a subject line for the afternoon mini-briefi
+          +ng."""                                                        
+      333 +        parts = []                                            
+      334 +        if urgent_count:                                      
+      335 +            parts.append(f"⚡ {urgent_count} urgent")         
+      336 +        if action_count:                                      
+      337 +            parts.append(f"{action_count} to reply")          
+      338 +                                                              
+      339 +        if parts:                                             
+      340 +            return f"📬 Inbox Update ({time_str}) — {', '.join
+          +(parts)}"                                                     
+      341 +        return f"📬 Inbox Update ({time_str}) — No new action 
+          +items"                                                        
+      342 +                                                              
+      343      # ── Obsidian / Markdown output ──────────────────────────
+           ──────────────────
+      344  
+      345      def generate_markdown(
+
+● Now add send_update_summary() to notifier.py.
+
+● Update(src/notifier.py)
+  ⎿  Added 32 lines
+      122          message = f"📬 *Inbox briefing ({time_str})*\n{summary
+           _line}\n\nFull briefing in your email."
+      123          return self._send_telegram(message)
+      124  
+      125 +    def send_update_summary(                                  
+      126 +        self, urgent: int, action: int                        
+      127 +    ) -> bool:                                                
+      128 +        """Send a Telegram ping for an afternoon mini-briefing
+          +.                                                             
+      129 +                                                              
+      130 +        Only sends if Telegram is configured and there are act
+          +ionable items.                                                
+      131 +        Returns True if sent, False if skipped or failed.     
+      132 +        """                                                   
+      133 +        if not self.telegram_enabled:                         
+      134 +            return False                                      
+      135 +                                                              
+      136 +        total = urgent + action                               
+      137 +        if total == 0:                                        
+      138 +            return False                                      
+      139 +                                                              
+      140 +        now = datetime.now()                                  
+      141 +        time_str = now.strftime("%H:%M")                      
+      142 +                                                              
+      143 +        parts = []                                            
+      144 +        if urgent:                                            
+      145 +            parts.append(f"⚡ {urgent} urgent")               
+      146 +        if action:                                            
+      147 +            parts.append(f"📋 {action} to reply")             
+      148 +                                                              
+      149 +        summary_line = " · ".join(parts)                      
+      150 +        message = (                                           
+      151 +            f"📬 *Inbox update ({time_str})*\n"               
+      152 +            f"{summary_line}\n\n"                             
+      153 +            f"Drafts in your email."                          
+      154 +        )                                                     
+      155 +        return self._send_telegram(message)                   
+      156 +                                                              
+      157      # ── Internal ────────────────────────────────────────────
+           ──────────────────
+      158  
+      159      def _send_telegram(self, message: str) -> bool:
+
+● Now the main change — add --mini flag to fetch_and_triage.py.
+
+● Update(src/fetch_and_triage.py)
+  ⎿  Added 3 lines
+      202                          help="Override lookback hours from con
+           fig")
+      203      parser.add_argument("--no-drafts", action="store_true",
+      204                          help="Skip draft creation")
+      205 +    parser.add_argument("--mini", action="store_true",        
+      206 +                        help="Afternoon update mode: compact b
+          +riefing email, "                                              
+      207 +                             "skip Obsidian note, Telegram pin
+          +g for new items only")                                        
+      208      parser.add_argument("--regenerate-style", action="store_tr
+           ue",
+      209                          help="Regenerate the writing style pro
+           file from corpus, then exit")
+      210      args = parser.parse_args()
+
+● Now update the briefing generation section to use mini mode when --mini is
+  set. Also skip the Obsidian note and use the update Telegram ping instead.
+
+● Update(src/fetch_and_triage.py)
+  ⎿  Added 41 lines, removed 26 lines
+      358              drafts = composer.compose_batch(new_emails, classi
+           fications)
+      359  
+      360      # ── 7. Generate briefing ─────────────────────────────
+      361 -    print("\n── Generating briefing...")                      
+      361      briefing_config = config.get("briefing", {})
+      362      generator = BriefingGenerator(
+      363          timezone=briefing_config.get("timezone", "Europe/Amste
+           rdam"),
+      364          max_fyi_items=briefing_config.get("max_fyi_items", 10)
+           ,
+      365          show_noise_count=briefing_config.get("show_noise_count
+           ", True),
+      366      )
+      368 -    subject, html_body = generator.generate(                  
+      369 -        classifications, drafts, attachment_summaries=attachme
+          -nt_summaries                                                  
+      370 -    )                                                         
+      371 -    markdown_body = generator.generate_markdown(              
+      372 -        classifications, drafts, attachment_summaries=attachme
+          -nt_summaries                                                  
+      373 -    )                                                         
+      367  
+      375 -    # ── 8. Send Telegram briefing ping ───────────────────   
+      376 -    if not args.dry_run:                                      
+      377 -        notifier = Notifier(config)                           
+      378 -        notifier.send_briefing_summary(                       
+      379 -            urgent=len(urgent),                               
+      380 -            action=len(actionable),                           
+      381 -            fyi=len(fyi),                                     
+      382 -            noise=len(noise),                                 
+      368 +    if args.mini:                                             
+      369 +        print("\n── Generating afternoon update...")          
+      370 +        subject, html_body = generator.generate_mini(         
+      371 +            classifications, drafts, attachment_summaries=atta
+          +chment_summaries                                              
+      372          )
+      373 +        markdown_body = None  # No Obsidian note for mini runs
+      374 +    else:                                                     
+      375 +        print("\n── Generating briefing...")                  
+      376 +        subject, html_body = generator.generate(              
+      377 +            classifications, drafts, attachment_summaries=atta
+          +chment_summaries                                              
+      378 +        )                                                     
+      379 +        markdown_body = generator.generate_markdown(          
+      380 +            classifications, drafts, attachment_summaries=atta
+          +chment_summaries                                              
+      381 +        )                                                     
+      382  
+      385 -    # ── 9. Write Obsidian note ────────────────────────────  
+      386 -    obsidian_cfg = config.get("obsidian", {})                 
+      387 -    vault_path = obsidian_cfg.get("vault_path", "")           
+      388 -    if vault_path:                                            
+      389 -        briefing_folder = obsidian_cfg.get("briefing_folder", 
+          -"inbox-briefings")                                            
+      390 -        try:                                                  
+      391 -            note_path = generator.write_to_obsidian(          
+      392 -                markdown_body, vault_path, briefing_folder    
+      383 +    # ── 8. Send Telegram ping ────────────────────────────   
+      384 +    if not args.dry_run:                                      
+      385 +        notifier = Notifier(config)                           
+      386 +        if args.mini:                                         
+      387 +            notifier.send_update_summary(                     
+      388 +                urgent=len(urgent),                           
+      389 +                action=len(actionable) - len(urgent),         
+      390              )
+      394 -            print(f"  Obsidian note written: {note_path}")    
+      395 -        except OSError as e:                                  
+      396 -            print(f"  ⚠ Could not write Obsidian note: {e}")  
+      391 +        else:                                                 
+      392 +            notifier.send_briefing_summary(                   
+      393 +                urgent=len(urgent),                           
+      394 +                action=len(actionable),                       
+      395 +                fyi=len(fyi),                                 
+      396 +                noise=len(noise),                             
+      397 +            )                                                 
+      398  
+      399 +    # ── 9. Write Obsidian note (skipped in --mini mode) ──   
+      400 +    if markdown_body:                                         
+      401 +        obsidian_cfg = config.get("obsidian", {})             
+      402 +        vault_path = obsidian_cfg.get("vault_path", "")       
+      403 +        if vault_path:                                        
+      404 +            briefing_folder = obsidian_cfg.get("briefing_folde
+          +r", "inbox-briefings")                                        
+      405 +            try:                                              
+      406 +                note_path = generator.write_to_obsidian(      
+      407 +                    markdown_body, vault_path, briefing_folder
+      408 +                )                                             
+      409 +                print(f"  Obsidian note written: {note_path}")
+      410 +            except OSError as e:                              
+      411 +                print(f"  ⚠ Could not write Obsidian note: {e}
+          +")                                                            
+      412 +                                                              
+      413      # ── 10. Deliver ──────────────────────────────────────
+      414      if args.dry_run:
+      415          print(f"\n── DRY RUN — would send briefing: {subject}"
+           )
+
+● Also update the dry-run preview section to handle mini mode.
+
+● Update(src/fetch_and_triage.py)
+  ⎿  Added 8 lines, removed 5 lines
+      412  
+      413      # ── 10. Deliver ──────────────────────────────────────
+      414      if args.dry_run:
+      415 -        print(f"\n── DRY RUN — would send briefing: {subject}"
+          -)                                                             
+      415 +        mode_label = "update" if args.mini else "briefing"    
+      416 +        print(f"\n── DRY RUN — would send {mode_label}: {subje
+          +ct}")                                                         
+      417          print(f"  Would create {len(drafts)} drafts")
+      417 -        print(f"  Would archive {len(noise)} noise items")    
+      418 +        if not args.mini:                                     
+      419 +            print(f"  Would archive {len(noise)} noise items")
+      420  
+      421          # Save HTML and Markdown previews
+      422          preview_path = project_root / "data" / "preview.html"
+      423          preview_path.parent.mkdir(parents=True, exist_ok=True)
+      424          preview_path.write_text(html_body)
+      423 -        md_preview_path = project_root / "data" / "preview.md"
+      424 -        md_preview_path.write_text(markdown_body)             
+      425          print(f"\n  HTML preview:     {preview_path}")
+      426 -        print(f"  Markdown preview: {md_preview_path}")       
+      426 +        if markdown_body:                                     
+      427 +            md_preview_path = project_root / "data" / "preview
+          +.md"                                                          
+      428 +            md_preview_path.write_text(markdown_body)         
+      429 +            print(f"  Markdown preview: {md_preview_path}")   
+      430  
+      431          # Print classification details
+      432          print("\n── Classification details:")
+
+● Now update the cron installer with the afternoon runs.
+
+● Update(cron/install.sh)
+  ⎿  Added 2 lines
+      21  DASHBOARD="45 6 * * * cd $SCRIPT_DIR && $PYTHON src/dashboard.p
+          y >> $LOG_DIR/dashboard.log 2>&1"
+      22  PROJECT_FETCH="30 8-20/1 * * * cd $SCRIPT_DIR && $PYTHON src/pr
+          oject_fetch.py >> $LOG_DIR/project-fetch.log 2>&1"
+      23  PROJECT_DISCOVER="0 4 * * 0 cd $SCRIPT_DIR && $PYTHON src/proje
+          ct_discover.py >> $LOG_DIR/project-discover.log 2>&1"
+      24 +AFTERNOON_1="0 13 * * 1-5 cd $SCRIPT_DIR && $PYTHON src/fetch_a
+         +nd_triage.py --mini >> $LOG_DIR/briefing.log 2>&1"             
+      25 +AFTERNOON_2="0 17 * * 1-5 cd $SCRIPT_DIR && $PYTHON src/fetch_a
+         +nd_triage.py --mini >> $LOG_DIR/briefing.log 2>&1"             
+      26  
+      27  # Check if already installed
+      28  EXISTING=$(crontab -l 2>/dev/null || true)
+
+● Update(cron/install.sh)
+  ⎿  Added 2 lines
+      44    echo "$DASHBOARD"
+      45    echo "$PROJECT_FETCH"
+      46    echo "$PROJECT_DISCOVER"
+      47 +  echo "$AFTERNOON_1"                                          
+      48 +  echo "$AFTERNOON_2"                                          
+      49  ) | crontab -
+      50  
+      51  echo "✓ Cron jobs installed:"
+
+● Update(cron/install.sh)
+  ⎿  Added 1 line
+      55  echo "  • Dashboard refresh:   6:45 AM daily"
+      56  echo "  • Project email fetch: every hour, 8:30 AM–8:30 PM"
+      57  echo "  • Project discovery:   Sunday 4:00 AM"
+      58 +echo "  • Afternoon updates:  1:00 PM + 5:00 PM, Mon–Fri"      
+      59  echo ""
+      60  echo "To adjust times, run: crontab -e"
+      61  echo "To view logs:         tail -f $LOG_DIR/briefing.log"
+
+● Now update the docs for --mini flag.
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line
+       96  |---------|---------|-------------|
+       97  | `python src/fetch_and_triage.py --dry-run` | Full triage, no
+            side effects | Testing |
+       98  | `python src/fetch_and_triage.py` | Full production run | Cro
+           n 06:30 |
+       99 +| `python src/fetch_and_triage.py --mini` | Afternoon update (
+          +compact email, no Obsidian note) | Cron 13:00 + 17:00 Mon–Fri 
+          +|                                                             
+      100  | `python src/fetch_and_triage.py --regenerate-style` | Rebuil
+           d writing style profile | Cron Sunday 02:00 |
+      101  | `python src/urgent_check.py` | Check for urgent items only |
+            Cron every 2 hrs 08:00–20:00 |
+      102  | `python src/dashboard.py` | Regenerate dashboard HTML | Cron
+            06:45 daily |
+
+● Update(CLAUDE.md)
+  ⎿  Added 2 lines
+      188  
+      189  ```
+      190  30 6     * * *     cd /home/jeroen/projects/inbox-assistant &&
+            env/bin/python src/fetch_and_triage.py
+      191 +0  13    * * 1-5   cd /home/jeroen/projects/inbox-assistant &&
+          + env/bin/python src/fetch_and_triage.py --mini                
+      192 +0  17    * * 1-5   cd /home/jeroen/projects/inbox-assistant &&
+          + env/bin/python src/fetch_and_triage.py --mini                
+      193  0  8-20/2 * * *   cd /home/jeroen/projects/inbox-assistant && 
+           env/bin/python src/urgent_check.py
+      194  45 6     * * *     cd /home/jeroen/projects/inbox-assistant &&
+            env/bin/python src/dashboard.py
+      195  30 8-20/1 * * *   cd /home/jeroen/projects/inbox-assistant && 
+           env/bin/python src/project_fetch.py
+
+● Now update README with the --mini flag documentation.
+
+● Update(README.md)
+  ⎿  Added 1 line
+      140  | `--dry-run` | flag | off | Classify and preview without send
+           ing email, saving state, or pinging Telegram. Writes `data/pre
+           view.html` and `data/preview.md`. |
+      141  | `--hours N` | int | from config | Override the lookback wind
+           ow (e.g. `--hours 48` for yesterday + today) |
+      142  | `--no-drafts` | flag | off | Skip draft reply generation (sa
+           ves API cost for large/retroactive runs) |
+      143 +| `--mini` | flag | off | Afternoon update mode: compact brief
+          +ing email (URGENT + ACTION only), skip Obsidian note, Telegram
+          + ping for new items |                                         
+      144  | `--regenerate-style` | flag | off | Rebuild `writing-samples
+           /style-profile.md` from the writing corpus, then exit without 
+           processing email |
+      145  
+      146  **Examples:**
+
+● Update(README.md)
+  ⎿  Added 1 line
+      148  python src/fetch_and_triage.py --dry-run              # safe p
+           review
+      149  python src/fetch_and_triage.py --dry-run --hours 48   # previe
+           w last 2 days
+      150  python src/fetch_and_triage.py --hours 336 --no-drafts  # retr
+           oactive 2-week import
+      151 +python src/fetch_and_triage.py --mini                  # after
+          +noon update (compact email)                                   
+      152  python src/fetch_and_triage.py --regenerate-style     # rebuil
+           d style profile
+      153  ```
+      154  
+
+● Update(README.md)
+  ⎿  Added 1 line
+      105  |------|-----|---------|
+      106  | 06:30 daily | `fetch_and_triage.py` | Morning briefing |
+      107  | Every 2 hrs, 08:00–20:00 | `urgent_check.py` | Urgent alerts
+            |
+      108 +| 13:00 + 17:00 Mon–Fri | `fetch_and_triage.py --mini` | After
+          +noon updates |                                                
+      109  | 06:45 daily | `dashboard.py` | Refresh dashboard HTML |
+      110  | Every hour, 08:30–20:30 | `project_fetch.py` | Incremental p
+           roject email archive |
+      111  | Sunday 02:00 | `fetch_and_triage.py --regenerate-style` | Re
+           build writing style profile |
+● Let me do a quick syntax check on the modified files.
+
+● Bash(env/bin/python -c "import ast;
+      ast.parse(open('src/fetch_and_triage.py').read());
+      print('fetch_and_triage.py OK')" && env/bin/python -c "import ast;
+      ast.parse(o…)
+  ⎿  fetch_and_triage.py OK
+     briefing.py OK
+     notifier.py OK
+
+● Phase 3A done. Now Phase 4 — Task extraction to Obsidian. This is the biggest
+  feature. Let me start with the classification prompt changes.
+
+● Update(prompts/classify.md)
+  ⎿  Added 55 lines, removed 1 line
+       77    "draft_tone": "formal | professional | warm | casual",
+       78    "reply_language": "en | nl",
+       79    "deadline": "YYYY-MM-DD or null",
+       80 -  "fyi_priority": "high | medium | low"                       
+       80 +  "fyi_priority": "high | medium | low",                      
+       81 +  "tasks": []                                                 
+       82  }
+       83  ```
+       84  
+       85 +## Task extraction rules                                      
+       86 +                                                              
+       87 +For URGENT and ACTION emails, extract concrete tasks into the 
+          +`tasks` array.                                                
+       88 +For FYI and NOISE emails, set `tasks` to an empty array `[]`. 
+       89 +                                                              
+       90 +Each task in the array:                                       
+       91 +                                                              
+       92 +```json                                                       
+       93 +{                                                             
+       94 +  "description": "Short imperative description of what Jeroen 
+          +needs to do",                                                 
+       95 +  "task_type": "explicit | implicit",                         
+       96 +  "deadline": "YYYY-MM-DD or null",                           
+       97 +  "time_estimate_minutes": 5,                                 
+       98 +  "complexity": "simple | complex",                           
+       99 +  "project": "project-id or null"                             
+      100 +}                                                             
+      101 +```                                                           
+      102 +                                                              
+      103 +**Field guidance:**                                           
+      104 +                                                              
+      105 +- `description`: Imperative, specific, ≤15 words. Include key 
+          +names, dates, or                                              
+      106 +  specifics from the email. E.g. "Reply to Margaux about submi
+          +ssion deadline" or                                            
+      107 +  "Submit OSA course planning form for period 6".             
+      108 +- `task_type`: "explicit" if the email directly asks Jeroen to
+          + do something                                                 
+      109 +  (review, submit, attend, reply by a date, approve). "implici
+          +t" if a response                                              
+      110 +  or action is expected but not explicitly requested (e.g. a q
+          +uestion that needs                                            
+      111 +  answering, a meeting invitation that needs confirming).     
+      112 +- `deadline`: Same as the email-level deadline if applicable, 
+          +or null.                                                      
+      113 +- `time_estimate_minutes`: Rough estimate. Use 5 for quick rep
+          +lies, 15 for                                                  
+      114 +  reviews/reads, 30–60 for substantive work. Don't overthink t
+          +his.                                                          
+      115 +- `complexity`: "simple" for single-step tasks (reply, confirm
+          +, forward).                                                   
+      116 +  "complex" for multi-step tasks that benefit from a brief ste
+          +p-by-step                                                     
+      117 +  breakdown (prepare a document, coordinate with multiple peop
+          +le, complete a                                                
+      118 +  form with multiple inputs).                                 
+      119 +- `project`: Match against the project list provided below the
+          + emails (if one                                               
+      120 +  is provided). Use the project `id` string, or null if no pro
+          +ject matches.                                                 
+      121 +                                                              
+      122 +**What counts as a task:**                                    
+      123 +- Replying to a question or request                           
+      124 +- Reviewing a document or submission                          
+      125 +- Attending or confirming a meeting                           
+      126 +- Submitting a form or application                            
+      127 +- Making a decision that someone is waiting on                
+      128 +- Forwarding information to someone                           
+      129 +                                                              
+      130 +**What is NOT a task:**                                       
+      131 +- Reading an FYI announcement (that's just FYI)               
+      132 +- A newsletter or notification (that's noise)                 
+      133 +- A thank-you note that needs no response                     
+      134 +                                                              
+      135 +An email may produce 0, 1, or multiple tasks. Most ACTION emai
+          +ls produce exactly                                            
+      136 +1 task. Some produce 2 if the email asks for multiple things. 
+      137 +                                                              
+      138  ## Summary style rules
+      139  
+      140  The `summary` field must be short and scannable (≤ 12 words). 
+           Lead with the
+
+● Now modify classifier.py to inject the project list into the classification
+  prompt.
+
+● Update(src/classifier.py)
+  ⎿  Added 5 lines, removed 1 line
+      13  class EmailClassifier:
+      14      """Classify emails using the configured LLM provider."""
+      15  
+      16 -    def __init__(self, llm_client):                            
+      16 +    def __init__(self, llm_client, projects: list[dict] | None 
+         += None):                                                       
+      17          """
+      18          Args:
+      19              llm_client: An LLMClient instance from llm_client.p
+          y.
+      20 +            projects:   Optional list of project dicts from con
+         +fig.yaml.                                                      
+      21 +                        Used to inject project IDs into the cla
+         +ssification                                                    
+      22 +                        prompt so the LLM can tag tasks by proj
+         +ect.                                                           
+      23          """
+      24          self.llm = llm_client
+      25 +        self.projects = projects or []                         
+      26          self.classify_prompt = self._load_prompt("classify.md")
+      27  
+      28      def _load_prompt(self, filename: str) -> str:
+
+● Now inject the project list into the user message in _classify_single_batch.
+
+● Update(src/classifier.py)
+  ⎿  Added 14 lines
+      62              }
+      63              email_summaries.append(summary)
+      64  
+      65 +        # Build project reference for task tagging             
+      66 +        project_ref = ""                                       
+      67 +        if self.projects:                                      
+      68 +            proj_lines = []                                    
+      69 +            for p in self.projects:                            
+      70 +                keywords = ", ".join(p.get("keywords", []))    
+      71 +                proj_lines.append(f"- {p['id']}: {p.get('name',
+         + p['id'])} — keywords: {keywords}")                            
+      72 +            project_ref = (                                    
+      73 +                "\n\nAvailable projects for task tagging "     
+      74 +                "(use the id string in the tasks.project field)
+         +:\n"                                                           
+      75 +                + "\n".join(proj_lines) + "\n"                 
+      76 +            )                                                  
+      77 +                                                               
+      78          user_message = (
+      79              f"Classify the following {len(emails)} emails. "
+      80              f"Return ONLY a JSON array with no other text.\n\n"
+      81              f"Emails:\n{json.dumps(email_summaries, indent=2)}"
+      82 +            f"{project_ref}"                                   
+      83          )
+      84  
+      85          response_text = self.llm.complete(
+
+● Now update fetch_and_triage.py to pass projects to the classifier.
+
+● Update(src/fetch_and_triage.py)
+  ⎿  Added 2 lines, removed 1 line
+      300  
+      301      # ── 4. Classify emails ───────────────────────────────
+      302      print(f"\n── Classifying {len(new_emails)} emails...")
+      303 -    classifier = EmailClassifier(llm)                         
+      303 +    projects = config.get("projects", [])                     
+      304 +    classifier = EmailClassifier(llm, projects=projects)      
+      305      classifications = classifier.classify_batch(new_emails)
+      306  
+      307      urgent = classifier.get_urgent(classifications)
+
+● Now create src/task_writer.py — the core new module.
+
+● Write(src/task_writer.py)
+  ⎿  Wrote 563 lines to src/task_writer.py
+      1 """
+      2 Task writer — extracts tasks from email classifications and write
+        s them
+      3 to Obsidian as a structured TASKS.md file with optional per-proje
+        ct and
+      4 complex-task detail files.
+      5 
+      6 The master file (TASKS.md) lives in the Obsidian vault root. Deta
+        il files
+      7 go into a Tasks/ subdirectory. All writes are append-only for new
+         tasks —
+      8 manually checked-off items are preserved and moved to a "Recently
+         Completed"
+      9 section.
+     … +553 lines (ctrl+o to expand)
+
+● Now integrate TaskWriter into fetch_and_triage.py. Add the import and the task
+   extraction step.
+
+● Update(src/fetch_and_triage.py)
+  ⎿  Added 1 line
+      28  from feedback_handler import process_feedback_dir
+      29  from attachment_handler import AttachmentHandler
+      30  from notifier import Notifier
+      31 +from task_writer import TaskWriter                             
+      32  
+      33  
+      34  def load_config() -> dict:
+
+● Now add the task extraction step after classification (step 4) and before
+  attachments (step 5). Also need to pass new_tasks to the briefing generator
+  later.
+
+● Update(src/fetch_and_triage.py)
+  ⎿  Added 17 lines
+      331                  "handled_at": None,
+      332              }
+      333  
+      334 +    # ── 4b. Extract and write tasks ──────────────────────── 
+      335 +    new_tasks = []                                            
+      336 +    tasks_cfg = config.get("tasks", {})                       
+      337 +    if tasks_cfg.get("enabled", False):                       
+      338 +        task_writer = TaskWriter(config, llm_client=llm)      
+      339 +        new_tasks = task_writer.extract_tasks(classifications)
+      340 +        if new_tasks:                                         
+      341 +            if args.dry_run:                                  
+      342 +                print(f"\n── DRY RUN — would add {len(new_task
+          +s)} task(s) to TASKS.md")                                     
+      343 +                for t in new_tasks:                           
+      344 +                    print(f"  {'⚡' if t['category'] == 'URGEN
+          +T' else '📋'} "                                               
+      345 +                          f"{t['description']}")              
+      346 +            else:                                             
+      347 +                written = task_writer.write_tasks(new_tasks)  
+      348 +                if written:                                   
+      349 +                    print(f"\n── {written} task(s) added to TA
+          +SKS.md")                                                      
+      350 +                                                              
+      351      # ── 5. Process attachments ───────────────────────────
+      352      # Build a lookup: email_id → list of attachment summaries
+      353      # Only runs when emails have a non-empty 'attachments' lis
+           t (n8n staging path)
+
+● Now add the task summary to the briefing. Let me add a task summary section to
+   both generate() and generate_mini() in briefing.py. First, I need to modify
+  these methods to accept tasks.
+
+● Update(src/briefing.py)
+  ⎿  Added 3 lines, removed 1 line
+      30  
+      31      def generate(self, classifications: list[dict],
+      32                   drafts: list[dict],
+      33 -                 attachment_summaries: dict | None = None) -> t
+         -uple[str, str]:                                                
+      33 +                 attachment_summaries: dict | None = None,     
+      34 +                 task_summary: list[dict] | None = None) -> tup
+         +le[str, str]:                                                  
+      35          """Generate the briefing email.
+      36  
+      37          Args:
+     ...
+      39              drafts:              Output of DraftComposer.compos
+          e_batch().
+      40              attachment_summaries: Optional dict mapping email_i
+          d → list of
+      41                                    attachment summary dicts from
+           AttachmentHandler.
+      42 +            task_summary:        Optional list of task dicts fr
+         +om TaskWriter.                                                 
+      43  
+      44          Returns (subject, html_body).
+      45          """
+
+● Now add the task summary section to the HTML render, just before the noise
+  section.
+
+  Read 1 file (ctrl+o to expand)
+
+● I need to pass task_summary through to the render. Let me update the render
+  call and add the task section.
+
+● Update(src/briefing.py)
+  ⎿  Added 2 lines, removed 1 line
+      56  
+      57          subject = self._make_subject(date_str, len(urgent), len
+          (action))
+      58          html = self._render_html(
+      59 -            date_str, urgent, action, fyi, noise, draft_lookup,
+         - att_lookup                                                    
+      59 +            date_str, urgent, action, fyi, noise, draft_lookup,
+         + att_lookup,                                                   
+      60 +            task_summary=task_summary,                         
+      61          )
+      62  
+      63          return subject, html
+
+● Update(src/briefing.py)
+  ⎿  Added 2 lines, removed 1 line
+      77  
+      78      def _render_html(self, date_str: str,
+      79                       urgent: list, action: list, fyi: list, noi
+          se: list,
+      80 -                     draft_lookup: dict, att_lookup: dict | Non
+         -e = None) -> str:                                              
+      80 +                     draft_lookup: dict, att_lookup: dict | Non
+         +e = None,                                                      
+      81 +                     task_summary: list[dict] | None = None) ->
+         + str:                                                          
+      82          """Render the briefing as HTML email."""
+      83          sections = []
+      84  
+
+● Now add the task summary section HTML before the noise summary.
+
+● Update(src/briefing.py)  ⎿  Added 39 lines
+      132                      f'  ...and {remaining} more FYI items</p>'
+      133                  )
+      134  
+      135 +        # Task summary (if tasks were extracted)              
+      136 +        if task_summary:                                      
+      137 +            task_items_html = ""                              
+      138 +            for t in task_summary:                            
+      139 +                desc = t.get("description", "")               
+      140 +                deadline = t.get("deadline")                  
+      141 +                time_est = t.get("time_estimate_minutes")     
+      142 +                category = t.get("category", "ACTION")        
+      143 +                icon = "⚡" if category == "URGENT" else "📋" 
+      144 +                                                              
+      145 +                meta_parts = []                               
+      146 +                if deadline:                                  
+      147 +                    meta_parts.append(f"due {deadline}")      
+      148 +                if time_est:                                  
+      149 +                    meta_parts.append(f"⏱ {time_est} min")    
+      150 +                meta = f" — <em>{'  '.join(meta_parts)}</em>" 
+          +if meta_parts else ""                                         
+      151 +                                                              
+      152 +                task_items_html += (                          
+      153 +                    f"<div style='padding: 4px 0;'>"          
+      154 +                    f"  {icon} {desc}{meta}"                  
+      155 +                    f"</div>\n"                               
+      156 +                )                                             
+      157 +                                                              
+      158 +            sections.append(f"""                              
+      159 +            <div style="margin-top: 20px;">                   
+      160 +                <h2 style="font-size: 16px; color: #7c3aed; ma
+          +rgin-bottom: 8px;">                                           
+      161 +                    📌 Tasks Extracted                        
+      162 +                </h2>                                         
+      163 +                <div style="background: #f5f3ff; border-radius
+          +: 6px;                                                        
+      164 +                            padding: 12px 16px; border-left: 3
+          +px solid #7c3aed;                                             
+      165 +                            font-size: 13px;">                
+      166 +                    {task_items_html}                         
+      167 +                </div>                                        
+      168 +                <p style="color: #94a3b8; font-size: 12px; mar
+          +gin-top: 4px;">                                               
+      169 +                    Full task list in your Obsidian vault → TA
+          +SKS.md                                                        
+      170 +                </p>                                          
+      171 +            </div>                                            
+      172 +            """)                                              
+      173 +                                                              
+      174          # Noise summary
+      175          if noise and self.show_noise_count:
+      176              sections.append(f"""
+
+● Now add task summary to the Markdown generation too.
+
+● Update(src/briefing.py)
+  ⎿  Added 1 line
+      390          classifications: list[dict],
+      391          drafts: list[dict],
+      392          attachment_summaries: dict | None = None,
+      393 +        task_summary: list[dict] | None = None,               
+      394      ) -> str:
+      395          """Generate an Obsidian-compatible Markdown daily note
+           .
+      396  
+
+● Now add the task summary section to the Markdown output, before the noise
+  section.
+
+● Update(src/briefing.py)
+  ⎿  Added 20 lines
+      467                  lines.append(f"- _...and {len(fyi) - self.max_
+           fyi_items} more_")
+      468              lines.append("")
+      469  
+      470 +        # ── Task summary ────────────────────────────────────
+          +──────────────────                                            
+      471 +        if task_summary:                                      
+      472 +            lines += ["## 📌 Tasks Extracted", ""]            
+      473 +            for t in task_summary:                            
+      474 +                desc = t.get("description", "")               
+      475 +                deadline = t.get("deadline")                  
+      476 +                time_est = t.get("time_estimate_minutes")     
+      477 +                category = t.get("category", "ACTION")        
+      478 +                icon = "⚡" if category == "URGENT" else "📋" 
+      479 +                                                              
+      480 +                meta_parts = []                               
+      481 +                if deadline:                                  
+      482 +                    meta_parts.append(f"_due {deadline}_")    
+      483 +                if time_est:                                  
+      484 +                    meta_parts.append(f"⏱ {time_est} min")    
+      485 +                meta = " — " + "  ".join(meta_parts) if meta_p
+          +arts else ""                                                  
+      486 +                                                              
+      487 +                lines.append(f"- {icon} {desc}{meta}")        
+      488 +            lines += ["", "_Full task list: [[TASKS]]_", ""]  
+      489 +                                                              
+      490          # ── Noise summary ───────────────────────────────────
+           ──────────────────
+      491          if noise and self.show_noise_count:
+      492              lines += [
+
+● Now update fetch_and_triage.py to pass the task summary to the briefing
+  generators.
+
+  Read 1 file (ctrl+o to expand)
+
+● I need to prepare the task summary and pass it to the generators. Let me also
+  get the task summary from the task_writer.
+
+● Update(src/fetch_and_triage.py)
+  ⎿  Added 10 lines, removed 2 lines
+      377              drafts = composer.compose_batch(new_emails, classi
+           fications)
+      378  
+      379      # ── 7. Generate briefing ─────────────────────────────
+      380 +    # Prepare task summary for briefing (if tasks are enabled 
+          +and were extracted)                                           
+      381 +    task_summary = None                                       
+      382 +    if new_tasks and tasks_cfg.get("include_in_briefing", True
+          +):                                                            
+      383 +        tw = TaskWriter(config) if not tasks_cfg.get("enabled"
+          +) else task_writer                                            
+      384 +        task_summary = tw.get_task_summary(new_tasks)         
+      385 +                                                              
+      386      briefing_config = config.get("briefing", {})
+      387      generator = BriefingGenerator(
+      388          timezone=briefing_config.get("timezone", "Europe/Amste
+           rdam"),
+     ...
+      399      else:
+      400          print("\n── Generating briefing...")
+      401          subject, html_body = generator.generate(
+      396 -            classifications, drafts, attachment_summaries=atta
+          -chment_summaries                                              
+      402 +            classifications, drafts, attachment_summaries=atta
+          +chment_summaries,                                             
+      403 +            task_summary=task_summary,                        
+      404          )
+      405          markdown_body = generator.generate_markdown(
+      399 -            classifications, drafts, attachment_summaries=atta
+          -chment_summaries                                              
+      406 +            classifications, drafts, attachment_summaries=atta
+          +chment_summaries,                                             
+      407 +            task_summary=task_summary,                        
+      408          )
+      409  
+      410      # ── 8. Send Telegram ping ────────────────────────────
+
+● Now let me fix a potential issue — the task_writer variable might not be
+  defined if tasks aren't enabled. Let me clean up that task_summary logic.
+
+● Update(src/fetch_and_triage.py)
+  ⎿  Added 2 lines, removed 3 lines
+      377              drafts = composer.compose_batch(new_emails, classi
+           fications)
+      378  
+      379      # ── 7. Generate briefing ─────────────────────────────
+      380 -    # Prepare task summary for briefing (if tasks are enabled 
+          -and were extracted)                                           
+      380 +    # Prepare task summary for briefing (if tasks were extract
+          +ed)                                                           
+      381      task_summary = None
+      382      if new_tasks and tasks_cfg.get("include_in_briefing", True
+           ):
+      383 -        tw = TaskWriter(config) if not tasks_cfg.get("enabled"
+          -) else task_writer                                            
+      384 -        task_summary = tw.get_task_summary(new_tasks)         
+      383 +        task_summary = TaskWriter(config).get_task_summary(new
+          +_tasks)                                                       
+      384  
+      385      briefing_config = config.get("briefing", {})
+      386      generator = BriefingGenerator(
+
+● Let me do a syntax check on all modified files.
+
+● Bash(env/bin/python -c "import ast;
+      ast.parse(open('src/fetch_and_triage.py').read());
+      print('fetch_and_triage.py OK')" && env/bin/python -c "import ast;
+      ast.parse(o…)
+  ⎿  fetch_and_triage.py OK
+     briefing.py OK
+     classifier.py OK
+     task_writer.py OK
+
+● All files parse correctly. Let me also update the classifier fallback to
+  include the new tasks field.
+
+● Update(src/classifier.py)
+  ⎿  Added 1 line
+      110                      "draft_tone": "professional",
+      111                      "reply_language": "en",
+      112                      "deadline": None,
+      113 +                    "tasks": [],                              
+      114                  }
+      115                  for e in emails
+      116              ]
+
+● Now update CLAUDE.md and README.md with the task extraction documentation.
+
+● Update(CLAUDE.md)
+  ⎿  Added 2 lines
+      147  | Re-authenticate Gmail | `python src/gmail_client.py --auth -
+           -headless` (see above) |
+      148  | Change Obsidian briefing format | Edit `briefing.py` → `gene
+           rate_markdown()` |
+      149  | Change HTML briefing format | Edit `briefing.py` → `_render_
+           section()` |
+      150 +| Enable task extraction | Set `tasks.enabled: true` in `confi
+          +g.yaml` |                                                     
+      151 +| Change task file location | Edit `tasks.obsidian_file` / `ta
+          +sks.detail_folder` in `config.yaml` |                         
+      152  | Process old emails retroactively | `python src/fetch_and_tri
+           age.py --hours 336 --no-drafts` |
+      153  | Add a new project to archive | Add an entry to `projects:` i
+           n `config.yaml` (see README) |
+      154  | Initial project email backfill | `python src/project_fetch.p
+           y --all` |
+
+● Now update the CLAUDE.md directory conventions table with the Tasks folder.
+
+● Update(CLAUDE.md)
+  ⎿  Added 2 lines
+      53  | `writing-samples/style-profile.md` | LLM-generated weekly sty
+          le guide. |
+      54  | `attachments/` | Saved email attachments, sorted by type. |
+      55  | `data/` | `processed.json` (thread state) and `weekly-stats.j
+          son` (dashboard data). |
+      56 +| `{vault}/TASKS.md` | Master task list in Obsidian vault (auto
+         +-generated, user-editable). |                                  
+      57 +| `{vault}/Tasks/` | Per-project and complex task detail files 
+         +(auto-generated). |                                            
+      58  | `logs/` | Cron output logs. |
+      59  | `dashboard/` | Local copy of generated HTML (also written to 
+          Caddy sites directory). |
+      60  | `n8n/` | n8n workflow JSON files — future use, not currently 
+          active. |
+
+● Phase 4 done. Now Phase 3B — on-demand draft via email forwarding. I need to:
+  1. Add fetch_thread() and remove_label() to gmail_client.py
+  2. Extend drafter.py with thread context support
+  3. Create draft_on_demand.py
+  4. Update config and docs
+
+  Read 1 file (ctrl+o to expand)
+
+● Good. Now let me add fetch_thread() and remove_label() methods to
+  gmail_client.py.
+
+● Update(src/gmail_client.py)
+  ⎿  Added 65 lines
+      359          print(f"✓ Briefing email sent: {subject}")
+      360          return sent
+      361  
+      362 +    def fetch_thread(self, thread_id: str) -> list[dict]:     
+      363 +        """Fetch all messages in a Gmail thread.              
+      364 +                                                              
+      365 +        Returns a list of parsed message dicts (same format as
+          + fetch_recent_emails),                                        
+      366 +        ordered oldest-first. Used by draft_on_demand.py to pr
+          +ovide conversation                                            
+      367 +        context when generating draft replies.                
+      368 +        """                                                   
+      369 +        if not self.service:                                  
+      370 +            raise RuntimeError("Not authenticated. Call authen
+          +ticate() first.")                                             
+      371 +                                                              
+      372 +        thread = self.service.users().threads().get(          
+      373 +            userId="me", id=thread_id, format="full"          
+      374 +        ).execute()                                           
+      375 +                                                              
+      376 +        messages = []                                         
+      377 +        for msg in thread.get("messages", []):                
+      378 +            messages.append(self._parse_message(msg))         
+      379 +                                                              
+      380 +        return messages                                       
+      381 +                                                              
+      382 +    def fetch_by_label(self, label_name: str,                 
+      383 +                       max_results: int = 10) -> list[dict]:  
+      384 +        """Fetch messages with a specific Gmail label.        
+      385 +                                                              
+      386 +        Returns parsed message dicts. Used by draft_on_demand.
+          +py to find                                                    
+      387 +        emails forwarded to jeroenm+draft@gmail.com.          
+      388 +        """                                                   
+      389 +        if not self.service:                                  
+      390 +            raise RuntimeError("Not authenticated. Call authen
+          +ticate() first.")                                             
+      391 +                                                              
+      392 +        label_ids = self._resolve_label_ids([label_name])     
+      393 +        if not label_ids:                                     
+      394 +            return []                                         
+      395 +                                                              
+      396 +        results = self.service.users().messages().list(       
+      397 +            userId="me",                                      
+      398 +            labelIds=label_ids,                               
+      399 +            maxResults=max_results,                           
+      400 +        ).execute()                                           
+      401 +                                                              
+      402 +        messages = results.get("messages", [])                
+      403 +        if not messages:                                      
+      404 +            return []                                         
+      405 +                                                              
+      406 +        emails = []                                           
+      407 +        for msg_meta in messages:                             
+      408 +            msg = self.service.users().messages().get(        
+      409 +                userId="me", id=msg_meta["id"], format="full" 
+      410 +            ).execute()                                       
+      411 +            emails.append(self._parse_message(msg))           
+      412 +                                                              
+      413 +        return emails                                         
+      414 +                                                              
+      415 +    def remove_label(self, message_id: str, label_name: str) -
+          +> None:                                                       
+      416 +        """Remove a label from a message. Used to mark draft r
+          +equests as processed."""                                      
+      417 +        label_ids = self._resolve_label_ids([label_name])     
+      418 +        if not label_ids:                                     
+      419 +            return                                            
+      420 +                                                              
+      421 +        self.service.users().messages().modify(               
+      422 +            userId="me",                                      
+      423 +            id=message_id,                                    
+      424 +            body={"removeLabelIds": label_ids},               
+      425 +        ).execute()                                           
+      426 +                                                              
+      427      def archive_messages(self, message_ids: list[str]) -> None
+           :
+      428          """Archive messages by removing the INBOX label."""
+      429          for msg_id in message_ids:
+
+● Now extend drafter.py to accept thread context.
+
+● Update(src/drafter.py)
+  ⎿  Added 44 lines, removed 3 lines
+      37          # If no style profile yet, remove the placeholder clean
+          ly
+      38          return base_prompt.replace("{STYLE_PROFILE}", "")
+      39  
+      40 -    def compose_draft(self, email: dict, classification: dict) 
+         --> str | None:                                                 
+      40 +    def compose_draft(self, email: dict, classification: dict, 
+      41 +                      thread_context: list[dict] | None = None,
+      42 +                      project_context: str | None = None) -> st
+         +r | None:                                                      
+      43          """Compose a draft reply for a single email.
+      42 -                                                               
+      44 +                                                               
+      45 +        Args:                                                  
+      46 +            email:           The email to reply to.            
+      47 +            classification:  Classification result for this ema
+         +il.                                                            
+      48 +            thread_context:  Optional list of earlier messages 
+         +in the thread                                                  
+      49 +                             (from gmail_client.fetch_thread). 
+         +Provides                                                       
+      50 +                             conversation history for more info
+         +rmed replies.                                                  
+      51 +            project_context: Optional text with recent project 
+         +correspondence                                                 
+      52 +                             (from Obsidian vault). Provides br
+         +oader context.                                                 
+      53 +                                                               
+      54          Returns the draft text, or None if no draft is needed.
+      55          """
+      56          if not classification.get("needs_draft", False):
+     ...
+       60          language = classification.get("reply_language", "en")
+       61          suggested_action = classification.get("suggested_actio
+           n", "")
+       62  
+       63 +        # Build thread context section if available           
+       64 +        thread_section = ""                                   
+       65 +        if thread_context:                                    
+       66 +            thread_parts = []                                 
+       67 +            for msg in thread_context:                        
+       68 +                # Skip the current email itself               
+       69 +                if msg.get("id") == email.get("id"):          
+       70 +                    continue                                  
+       71 +                thread_parts.append(                          
+       72 +                    f"From: {msg['from']}\n"                  
+       73 +                    f"Date: {msg['date']}\n"                  
+       74 +                    f"{msg.get('body_text', msg.get('snippet',
+          + ''))[:1500]}\n"                                              
+       75 +                )                                             
+       76 +            if thread_parts:                                  
+       77 +                thread_section = (                            
+       78 +                    "\n**Earlier messages in this thread (olde
+          +st first):**\n\n"                                             
+       79 +                    + "\n---\n".join(thread_parts)            
+       80 +                    + "\n---\n\n"                             
+       81 +                )                                             
+       82 +                                                              
+       83 +        # Build project context section if available          
+       84 +        project_section = ""                                  
+       85 +        if project_context:                                   
+       86 +            project_section = (                               
+       87 +                "\n**Recent project correspondence for additio
+          +nal context:**\n\n"                                           
+       88 +                f"{project_context[:3000]}\n\n---\n\n"        
+       89 +            )                                                 
+       90 +                                                              
+       91          user_message = (
+       92              f"Draft a reply to this email.\n\n"
+       93              f"**Tone:** {tone}\n"
+       94              f"**Language:** {'Dutch' if language == 'nl' else 
+           'English'}\n"
+       95              f"**Suggested action:** {suggested_action}\n\n"
+       57 -            f"**Original email:**\n"                          
+       96 +            f"{thread_section}"                               
+       97 +            f"{project_section}"                              
+       98 +            f"**Email to reply to:**\n"                       
+       99              f"From: {email['from']}\n"
+      100              f"Subject: {email['subject']}\n"
+      101              f"Date: {email['date']}\n\n"
+
+● Now create the draft_on_demand.py script.
+● Write(src/draft_on_demand.py)
+  ⎿  Wrote 271 lines to src/draft_on_demand.py
+       1 #!/usr/bin/env python3
+       2 """
+       3 On-demand draft generator — triggered by forwarding to jeroenm+d
+         raft@gmail.com.
+       4 
+       5 Watches a Gmail label (_draft-request) for forwarded emails. Whe
+         n found:
+       6   1. Extracts the original email from the forwarded message
+       7   2. Fetches the full thread context from Gmail
+       8   3. If the email matches a project, loads recent project emails
+          for context
+       9   4. Generates a context-aware draft reply using Sonnet
+      10   5. Emails the draft to Jeroen's UCM address
+     … +261 lines (ctrl+o to expand)
+
+● Now update the cron installer and docs for the on-demand draft feature.
+
+● Update(cron/install.sh)
+  ⎿  Added 1 line
+      23  PROJECT_DISCOVER="0 4 * * 0 cd $SCRIPT_DIR && $PYTHON src/proje
+          ct_discover.py >> $LOG_DIR/project-discover.log 2>&1"
+      24  AFTERNOON_1="0 13 * * 1-5 cd $SCRIPT_DIR && $PYTHON src/fetch_a
+          nd_triage.py --mini >> $LOG_DIR/briefing.log 2>&1"
+      25  AFTERNOON_2="0 17 * * 1-5 cd $SCRIPT_DIR && $PYTHON src/fetch_a
+          nd_triage.py --mini >> $LOG_DIR/briefing.log 2>&1"
+      26 +DRAFT_ON_DEMAND="*/2 8-20 * * 1-5 cd $SCRIPT_DIR && $PYTHON src
+         +/draft_on_demand.py >> $LOG_DIR/draft-on-demand.log 2>&1"      
+      27  
+      28  # Check if already installed
+      29  EXISTING=$(crontab -l 2>/dev/null || true)
+
+● Update(cron/install.sh)
+  ⎿  Added 1 line
+      47    echo "$PROJECT_DISCOVER"
+      48    echo "$AFTERNOON_1"
+      49    echo "$AFTERNOON_2"
+      50 +  echo "$DRAFT_ON_DEMAND"                                      
+      51  ) | crontab -
+      52  
+      53  echo "✓ Cron jobs installed:"
+
+● Update(cron/install.sh)
+  ⎿  Added 1 line
+      58  echo "  • Project email fetch: every hour, 8:30 AM–8:30 PM"
+      59  echo "  • Project discovery:   Sunday 4:00 AM"
+      60  echo "  • Afternoon updates:  1:00 PM + 5:00 PM, Mon–Fri"
+      61 +echo "  • Draft on demand:   every 2 min, 8 AM–8 PM, Mon–Fri"  
+      62  echo ""
+      63  echo "To adjust times, run: crontab -e"
+      64  echo "To view logs:         tail -f $LOG_DIR/briefing.log"
+
+● Now update CLAUDE.md with the on-demand draft entry points and cron.
+
+● Update(CLAUDE.md)
+  ⎿  Added 2 lines
+      108  | `python src/project_fetch.py` | Incremental project email ar
+           chive | Cron hourly 08:30–20:30 |
+      109  | `python src/project_discover.py --dry-run` | Preview project
+            suggestions | Testing |
+      110  | `python src/project_discover.py` | Discover and email new pr
+           oject suggestions | Cron Sunday 04:00 |
+      111 +| `python src/draft_on_demand.py` | Process on-demand draft re
+          +quests | Cron every 2 min Mon–Fri 08:00–20:00 |               
+      112 +| `python src/draft_on_demand.py --dry-run` | Preview draft re
+          +quests | Testing |                                            
+      113  | `python src/project_discover.py --hours 4320` | Retroactive 
+           discovery (6 months) | One-off deep scan |
+      114  
+      115  Always activate the virtualenv first: `source env/bin/activate
+           `
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line
+      201  30 8-20/1 * * *   cd /home/jeroen/projects/inbox-assistant && 
+           env/bin/python src/project_fetch.py
+      202  0  2     * * 0     cd /home/jeroen/projects/inbox-assistant &&
+            env/bin/python src/fetch_and_triage.py --regenerate-style
+      203  0  4     * * 0     cd /home/jeroen/projects/inbox-assistant &&
+            env/bin/python src/project_discover.py
+      204 +*/2 8-20 * * 1-5   cd /home/jeroen/projects/inbox-assistant &&
+          + env/bin/python src/draft_on_demand.py                        
+      205  ```
+      206  
+      207  ---
+
+● Add the on-demand draft to common tasks and Gmail setup instructions.
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line
+      153  | Change HTML briefing format | Edit `briefing.py` → `_render_
+           section()` |
+      154  | Enable task extraction | Set `tasks.enabled: true` in `confi
+           g.yaml` |
+      155  | Change task file location | Edit `tasks.obsidian_file` / `ta
+           sks.detail_folder` in `config.yaml` |
+      156 +| Request an on-demand draft | Forward email to `jeroenm+draft
+          +@gmail.com` (processed within 2 min) |                        
+      157  | Process old emails retroactively | `python src/fetch_and_tri
+           age.py --hours 336 --no-drafts` |
+      158  | Add a new project to archive | Add an entry to `projects:` i
+           n `config.yaml` (see README) |
+      159  | Initial project email backfill | `python src/project_fetch.p
+           y --all` |
+
+● Now update README.md with the on-demand draft feature.
+
+● Update(README.md)
+  ⎿  Added 1 line
+      108  | 13:00 + 17:00 Mon–Fri | `fetch_and_triage.py --mini` | After
+           noon updates |
+      109  | 06:45 daily | `dashboard.py` | Refresh dashboard HTML |
+      110  | Every hour, 08:30–20:30 | `project_fetch.py` | Incremental p
+           roject email archive |
+      111 +| Every 2 min, 08:00–20:00 Mon–Fri | `draft_on_demand.py` | On
+          +-demand draft via email forward |                             
+      112  | Sunday 02:00 | `fetch_and_triage.py --regenerate-style` | Re
+           build writing style profile |
+      113  | Sunday 04:00 | `project_discover.py` | Discover new project 
+           suggestions |
+      114  
+
+● Now add a section in the README documenting the on-demand draft feature and
+  the task extraction feature.
+
+● Update(README.md)
+  ⎿  Added 29 lines
+      251  
+      252  ---
+      253  
+      254 +### `src/draft_on_demand.py` — On-demand draft generator      
+      255 +                                                              
+      256 +Forward any email to `jeroenm+draft@gmail.com` to request a dr
+          +aft reply within                                              
+      257 +2 minutes. The script fetches the full thread context from Gma
+          +il and, if the                                                
+      258 +email matches a configured project, also loads recent project 
+          +emails from your                                              
+      259 +Obsidian vault for additional context.                        
+      260 +                                                              
+      261 +The draft is emailed to your UCM address — no Telegram notific
+          +ation.                                                        
+      262 +                                                              
+      263 +**Gmail setup required:** Create a filter in Gmail:           
+      264 +- Matches: `to:jeroenm+draft@gmail.com`                       
+      265 +- Action: Apply label `_draft-request`, Skip inbox            
+      266 +                                                              
+      267 +| Flag | Type | Default | Description |                       
+      268 +|------|------|---------|-------------|                       
+      269 +| *(none)* | | | Process pending draft requests |             
+      270 +| `--dry-run` | flag | off | Preview without sending or modify
+          +ing labels |                                                  
+      271 +                                                              
+      272 +**Configuration** (`config.yaml`):                            
+      273 +                                                              
+      274 +```yaml                                                       
+      275 +draft_on_demand:                                              
+      276 +  enabled: true                                               
+      277 +  label: "_draft-request"                                     
+      278 +  send_to: "jeroen.moes@maastrichtuniversity.nl"              
+      279 +```                                                           
+      280 +                                                              
+      281 +---                                                           
+      282 +                                                              
+      283  ### `src/urgent_check.py` — Urgent email checker
+      284  
+      285  Fetches the most recent emails and sends a Telegram alert if a
+           ny are URGENT.
+
+● Now add the project structure reference for the new files.
+
+● Update(README.md)
+  ⎿  Added 2 lines
+      66  │   ├── feedback_handler.py    ← BCC feedback loop processor (s
+          ee Roadmap)
+      67  │   ├── attachment_handler.py  ← PDF/DOCX/ICS attachment classi
+          fier
+      68  │   ├── notifier.py            ← Telegram notifications
+      69 +│   ├── task_writer.py          ← Task extraction to Obsidian T
+         +ASKS.md                                                        
+      70 +│   ├── draft_on_demand.py     ← On-demand draft via email forw
+         +arding                                                         
+      71  │   ├── urgent_check.py        ← Runs every 2 hours, alerts on 
+          new urgent mail
+      72  │   └── dashboard.py           ← Weekly stats HTML generator
+      73  │
+
+● Let me do a final syntax check on all new/modified files.
+
+● Bash(env/bin/python -c "
+      import ast…)
+  ⎿  src/fetch_and_triage.py: OK
+     src/briefing.py: OK
+     src/classifier.py: OK
+     … +6 lines (ctrl+o to expand)
+
+● All files pass syntax checks. Let me also quickly verify the config.yaml needs
+   the new sections added.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● I need to add the new config sections. Let me append them.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(config.yaml)
+  ⎿  Added 17 lines, removed 1 line
+      306        - "UGR3001"
+      307      collaborators:
+      308        - name: "Ucm-marble (UCM)"
+      309 -        email_fragment: "ucm-marble"                          
+      309   No newline at end of file
+      310 +        email_fragment: "ucm-marble"                          
+      311 +                                                              
+      312 +# ── Task extraction to Obsidian ─────────────────────────    
+      313 +tasks:                                                        
+      314 +  enabled: true                                               
+      315 +  obsidian_file: "TASKS.md"           # relative to vault root
+      316 +  detail_folder: "Tasks"              # relative to vault root
+      317 +  include_in_briefing: true           # show task summary in d
+          +aily briefing                                                 
+      318 +  completed_retention_days: 7         # days to keep completed
+          + tasks before pruning                                         
+      319 +                                                              
+      320 +# ── On-demand draft generation ──────────────────────────    
+      321 +# Forward any email to jeroenm+draft@gmail.com to request a dr
+          +aft reply.                                                    
+      322 +# Requires Gmail filter: to:jeroenm+draft@gmail.com → apply la
+          +bel _draft-request                                            
+      323 +draft_on_demand:                                              
+      324 +  enabled: true                                               
+      325 +  label: "_draft-request"                                     
+      326 +  send_to: "jeroen.moes@maastrichtuniversity.nl"              
+      327   No newline at end of file
+
+● Now let me also update the config.example.yaml with the new sections so
+  they're documented for future reference.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(config.example.yaml)
+  ⎿  Added 20 lines
+      215      # scan_labels:                       # Optional: override 
+           global gmail.scan_labels
+      216      #   - "_UCM-redirect"
+      217      #   - "INBOX"
+      218 +                                                              
+      219 +# ── Task extraction to Obsidian ─────────────────────────    
+      220 +# Extracts tasks from classified emails and writes to a TASKS.
+          +md file in                                                    
+      221 +# the Obsidian vault. Complex tasks get step-by-step breakdown
+          +s in a                                                        
+      222 +# Tasks/ subfolder.                                           
+      223 +tasks:                                                        
+      224 +  enabled: false                         # Set to true to enab
+          +le                                                            
+      225 +  obsidian_file: "TASKS.md"             # Master task file, re
+          +lative to vault root                                          
+      226 +  detail_folder: "Tasks"                # Folder for per-proje
+          +ct and complex task files                                     
+      227 +  include_in_briefing: true             # Show task summary in
+          + daily briefing                                               
+      228 +  completed_retention_days: 7           # Days to keep complet
+          +ed tasks before pruning                                       
+      229 +                                                              
+      230 +# ── On-demand draft generation ──────────────────────────    
+      231 +# Forward any email to you+draft@gmail.com to get a draft repl
+          +y emailed                                                     
+      232 +# to your work address within 2 minutes. Requires a Gmail filt
+          +er:                                                           
+      233 +#   to:you+draft@gmail.com → apply label _draft-request, skip 
+          +inbox                                                         
+      234 +draft_on_demand:                                              
+      235 +  enabled: false                         # Set to true to enab
+          +le                                                            
+      236 +  label: "_draft-request"               # Gmail label to watch
+      237 +  send_to: "you@university.edu"         # Where to email the d
+          +raft reply                                                    
+
+● Let me do one final comprehensive check.
+● Bash(env/bin/python -c "
+      import ast…)
+  ⎿  src/fetch_and_triage.py: OK
+     src/briefing.py: OK
+     src/classifier.py: OK
+     … +10 lines (ctrl+o to expand)
+
+● All four phases are implemented. Let me save a memory about the current state
+  of the project.
+
+  Recalled 1 memory, wrote 1 memory (ctrl+o to expand)
+
+● All done. Here's a summary of everything implemented:
+
+  Summary
+
+  Phase 1: Crontab Documentation Sync
+
+  Updated cron/install.sh, CLAUDE.md, and README.md to match your actual crontab
+   (dashboard daily 06:45, project_fetch hourly 08:30–20:30).
+
+  Phase 2: Pipeline Efficiency
+
+  No changes needed — current setup costs ~$15–20/year. Haiku for classification
+   is already very cheap.
+
+  Phase 3A: Afternoon Triage (--mini flag)
+
+  - src/fetch_and_triage.py — new --mini flag: sends compact "Inbox Update"
+  email with only URGENT + ACTION items, skips Obsidian note
+  - src/briefing.py — new generate_mini() method for compact HTML briefings
+  - src/notifier.py — new send_update_summary() for Telegram pings
+  - Cron: 13:00 + 17:00 Mon–Fri
+
+  Phase 3B: On-Demand Draft via Email Forward
+
+  - src/draft_on_demand.py (new) — monitors _draft-request label, fetches full
+  thread + project context, generates draft, emails it to your UCM address
+  - src/gmail_client.py — new fetch_thread(), fetch_by_label(), remove_label()
+  methods
+  - src/drafter.py — extended compose_draft() with thread_context and
+  project_context parameters
+  - Cron: every 2 minutes Mon–Fri 08:00–20:00
+
+  Phase 4: Task Extraction to Obsidian
+
+  - prompts/classify.md — added tasks array to classification output with
+  task_type, deadline, time_estimate, complexity, project fields
+  - src/classifier.py — injects project list into classification prompt
+  - src/task_writer.py (new) — parses/writes TASKS.md, creates per-project and
+  complex task detail files in Tasks/, handles housekeeping
+  - src/briefing.py — task summary section in both HTML and Markdown briefings
+
+  Next steps for you:
+
+  1. Create the Gmail filter: to:jeroenm+draft@gmail.com → apply label
+  _draft-request, skip inbox
+  2. Install the updated cron: run cron/install.sh (or manually add the new
+  entries via crontab -e)
+  3. Test with dry-run: python src/fetch_and_triage.py --dry-run to see the new
+  task extraction in action
+  4. Test on-demand draft: python src/draft_on_demand.py --dry-run after
+  forwarding a test email
+
+✻ Cooked for 18m 55s
+
+❯ /login                                                                        
+  ⎿  Login successful

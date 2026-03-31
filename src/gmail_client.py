@@ -359,6 +359,71 @@ class GmailClient:
         print(f"✓ Briefing email sent: {subject}")
         return sent
 
+    def fetch_thread(self, thread_id: str) -> list[dict]:
+        """Fetch all messages in a Gmail thread.
+
+        Returns a list of parsed message dicts (same format as fetch_recent_emails),
+        ordered oldest-first. Used by draft_on_demand.py to provide conversation
+        context when generating draft replies.
+        """
+        if not self.service:
+            raise RuntimeError("Not authenticated. Call authenticate() first.")
+
+        thread = self.service.users().threads().get(
+            userId="me", id=thread_id, format="full"
+        ).execute()
+
+        messages = []
+        for msg in thread.get("messages", []):
+            messages.append(self._parse_message(msg))
+
+        return messages
+
+    def fetch_by_label(self, label_name: str,
+                       max_results: int = 10) -> list[dict]:
+        """Fetch messages with a specific Gmail label.
+
+        Returns parsed message dicts. Used by draft_on_demand.py to find
+        emails forwarded to jeroenm+draft@gmail.com.
+        """
+        if not self.service:
+            raise RuntimeError("Not authenticated. Call authenticate() first.")
+
+        label_ids = self._resolve_label_ids([label_name])
+        if not label_ids:
+            return []
+
+        results = self.service.users().messages().list(
+            userId="me",
+            labelIds=label_ids,
+            maxResults=max_results,
+        ).execute()
+
+        messages = results.get("messages", [])
+        if not messages:
+            return []
+
+        emails = []
+        for msg_meta in messages:
+            msg = self.service.users().messages().get(
+                userId="me", id=msg_meta["id"], format="full"
+            ).execute()
+            emails.append(self._parse_message(msg))
+
+        return emails
+
+    def remove_label(self, message_id: str, label_name: str) -> None:
+        """Remove a label from a message. Used to mark draft requests as processed."""
+        label_ids = self._resolve_label_ids([label_name])
+        if not label_ids:
+            return
+
+        self.service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={"removeLabelIds": label_ids},
+        ).execute()
+
     def archive_messages(self, message_ids: list[str]) -> None:
         """Archive messages by removing the INBOX label."""
         for msg_id in message_ids:

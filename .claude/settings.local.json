@@ -10,9 +10,22 @@
       "Bash(python src/fetch_and_triage.py --dry-run --hours 4)",
       "Bash(python src/fetch_and_triage.py --dry-run)",
       "Bash(python -c \":*)",
-      "Bash(ls:*)",
+      "Bash(ls*)",
+      "Bash(grep*)",
+      "Bash(find*)",
+      "Bash(python src/*)",
       "Bash(python -c \"import sys; sys.path.insert\\(0, ''src''\\); import project_discover; print\\(''✓ Module imports OK''\\)\")",
-      "Bash(python src/project_discover.py --dry-run --hours 336)"
-    ]
+      "Bash(python src/project_discover.py --dry-run --hours 336)",
+      "Bash(crontab:*)",
+      "Bash(env/bin/python -c \"import ast; ast.parse\\(open\\(''src/fetch_and_triage.py''\\).read\\(\\)\\); print\\(''fetch_and_triage.py OK''\\)\")",
+      "Bash(env/bin/python -c \"import ast; ast.parse\\(open\\(''src/briefing.py''\\).read\\(\\)\\); print\\(''briefing.py OK''\\)\")",
+      "Bash(env/bin/python -c \"import ast; ast.parse\\(open\\(''src/notifier.py''\\).read\\(\\)\\); print\\(''notifier.py OK''\\)\")",
+      "Bash(env/bin/python -c \"import ast; ast.parse\\(open\\(''src/classifier.py''\\).read\\(\\)\\); print\\(''classifier.py OK''\\)\")",
+      "Bash(env/bin/python -c \"import ast; ast.parse\\(open\\(''src/task_writer.py''\\).read\\(\\)\\); print\\(''task_writer.py OK''\\)\")",
+      "Bash(env/bin/python -c \":*)",
+      "Bash(env/bin/python -c \"import yaml; yaml.safe_load\\(open\\(''config.yaml''\\).read\\(\\)\\); print\\(''config.yaml: OK''\\)\")",
+      "Bash(env/bin/python -c \"import yaml; yaml.safe_load\\(open\\(''config.example.yaml''\\).read\\(\\)\\); print\\(''config.example.yaml: OK''\\)\")"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }

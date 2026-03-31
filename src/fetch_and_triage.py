@@ -28,6 +28,7 @@ from style_manager import StyleManager
 from feedback_handler import process_feedback_dir
 from attachment_handler import AttachmentHandler
 from notifier import Notifier
+from task_writer import TaskWriter
 
 
 def load_config() -> dict:
@@ -202,6 +203,9 @@ def main():
                         help="Override lookback hours from config")
     parser.add_argument("--no-drafts", action="store_true",
                         help="Skip draft creation")
+    parser.add_argument("--mini", action="store_true",
+                        help="Afternoon update mode: compact briefing email, "
+                             "skip Obsidian note, Telegram ping for new items only")
     parser.add_argument("--regenerate-style", action="store_true",
                         help="Regenerate the writing style profile from corpus, then exit")
     args = parser.parse_args()
@@ -297,7 +301,8 @@ def main():
 
     # ── 4. Classify emails ───────────────────────────────
     print(f"\n── Classifying {len(new_emails)} emails...")
-    classifier = EmailClassifier(llm)
+    projects = config.get("projects", [])
+    classifier = EmailClassifier(llm, projects=projects)
     classifications = classifier.classify_batch(new_emails)
 
     urgent = classifier.get_urgent(classifications)
@@ -325,6 +330,23 @@ def main():
                 "classified_at": now_iso,
                 "handled_at": None,
             }
+
+    # ── 4b. Extract and write tasks ────────────────────────
+    new_tasks = []
+    tasks_cfg = config.get("tasks", {})
+    if tasks_cfg.get("enabled", False):
+        task_writer = TaskWriter(config, llm_client=llm)
+        new_tasks = task_writer.extract_tasks(classifications)
+        if new_tasks:
+            if args.dry_run:
+                print(f"\n── DRY RUN — would add {len(new_tasks)} task(s) to TASKS.md")
+                for t in new_tasks:
+                    print(f"  {'⚡' if t['category'] == 'URGENT' else '📋'} "
+                          f"{t['description']}")
+            else:
+                written = task_writer.write_tasks(new_tasks)
+                if written:
+                    print(f"\n── {written} task(s) added to TASKS.md")
 
     # ── 5. Process attachments ───────────────────────────
     # Build a lookup: email_id → list of attachment summaries
@@ -355,57 +377,82 @@ def main():
             drafts = composer.compose_batch(new_emails, classifications)
 
     # ── 7. Generate briefing ─────────────────────────────
-    print("\n── Generating briefing...")
+    # Prepare task summary for briefing (if tasks were extracted)
+    task_summary = None
+    if new_tasks and tasks_cfg.get("include_in_briefing", True):
+        task_summary = TaskWriter(config).get_task_summary(new_tasks)
+
     briefing_config = config.get("briefing", {})
     generator = BriefingGenerator(
         timezone=briefing_config.get("timezone", "Europe/Amsterdam"),
         max_fyi_items=briefing_config.get("max_fyi_items", 10),
         show_noise_count=briefing_config.get("show_noise_count", True),
     )
-    subject, html_body = generator.generate(
-        classifications, drafts, attachment_summaries=attachment_summaries
-    )
-    markdown_body = generator.generate_markdown(
-        classifications, drafts, attachment_summaries=attachment_summaries
-    )
 
-    # ── 8. Send Telegram briefing ping ───────────────────
-    if not args.dry_run:
-        notifier = Notifier(config)
-        notifier.send_briefing_summary(
-            urgent=len(urgent),
-            action=len(actionable),
-            fyi=len(fyi),
-            noise=len(noise),
+    if args.mini:
+        print("\n── Generating afternoon update...")
+        subject, html_body = generator.generate_mini(
+            classifications, drafts, attachment_summaries=attachment_summaries
+        )
+        markdown_body = None  # No Obsidian note for mini runs
+    else:
+        print("\n── Generating briefing...")
+        subject, html_body = generator.generate(
+            classifications, drafts, attachment_summaries=attachment_summaries,
+            task_summary=task_summary,
+        )
+        markdown_body = generator.generate_markdown(
+            classifications, drafts, attachment_summaries=attachment_summaries,
+            task_summary=task_summary,
         )
 
-    # ── 9. Write Obsidian note ────────────────────────────
-    obsidian_cfg = config.get("obsidian", {})
-    vault_path = obsidian_cfg.get("vault_path", "")
-    if vault_path:
-        briefing_folder = obsidian_cfg.get("briefing_folder", "inbox-briefings")
-        try:
-            note_path = generator.write_to_obsidian(
-                markdown_body, vault_path, briefing_folder
+    # ── 8. Send Telegram ping ────────────────────────────
+    if not args.dry_run:
+        notifier = Notifier(config)
+        if args.mini:
+            notifier.send_update_summary(
+                urgent=len(urgent),
+                action=len(actionable) - len(urgent),
             )
-            print(f"  Obsidian note written: {note_path}")
-        except OSError as e:
-            print(f"  ⚠ Could not write Obsidian note: {e}")
+        else:
+            notifier.send_briefing_summary(
+                urgent=len(urgent),
+                action=len(actionable),
+                fyi=len(fyi),
+                noise=len(noise),
+            )
+
+    # ── 9. Write Obsidian note (skipped in --mini mode) ──
+    if markdown_body:
+        obsidian_cfg = config.get("obsidian", {})
+        vault_path = obsidian_cfg.get("vault_path", "")
+        if vault_path:
+            briefing_folder = obsidian_cfg.get("briefing_folder", "inbox-briefings")
+            try:
+                note_path = generator.write_to_obsidian(
+                    markdown_body, vault_path, briefing_folder
+                )
+                print(f"  Obsidian note written: {note_path}")
+            except OSError as e:
+                print(f"  ⚠ Could not write Obsidian note: {e}")
 
     # ── 10. Deliver ──────────────────────────────────────
     if args.dry_run:
-        print(f"\n── DRY RUN — would send briefing: {subject}")
+        mode_label = "update" if args.mini else "briefing"
+        print(f"\n── DRY RUN — would send {mode_label}: {subject}")
         print(f"  Would create {len(drafts)} drafts")
-        print(f"  Would archive {len(noise)} noise items")
+        if not args.mini:
+            print(f"  Would archive {len(noise)} noise items")
 
         # Save HTML and Markdown previews
         preview_path = project_root / "data" / "preview.html"
         preview_path.parent.mkdir(parents=True, exist_ok=True)
         preview_path.write_text(html_body)
-        md_preview_path = project_root / "data" / "preview.md"
-        md_preview_path.write_text(markdown_body)
         print(f"\n  HTML preview:     {preview_path}")
-        print(f"  Markdown preview: {md_preview_path}")
+        if markdown_body:
+            md_preview_path = project_root / "data" / "preview.md"
+            md_preview_path.write_text(markdown_body)
+            print(f"  Markdown preview: {md_preview_path}")
 
         # Print classification details
         print("\n── Classification details:")

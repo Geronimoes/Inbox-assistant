@@ -122,6 +122,38 @@ class Notifier:
         message = f"📬 *Inbox briefing ({time_str})*\n{summary_line}\n\nFull briefing in your email."
         return self._send_telegram(message)
 
+    def send_update_summary(
+        self, urgent: int, action: int
+    ) -> bool:
+        """Send a Telegram ping for an afternoon mini-briefing.
+
+        Only sends if Telegram is configured and there are actionable items.
+        Returns True if sent, False if skipped or failed.
+        """
+        if not self.telegram_enabled:
+            return False
+
+        total = urgent + action
+        if total == 0:
+            return False
+
+        now = datetime.now()
+        time_str = now.strftime("%H:%M")
+
+        parts = []
+        if urgent:
+            parts.append(f"⚡ {urgent} urgent")
+        if action:
+            parts.append(f"📋 {action} to reply")
+
+        summary_line = " · ".join(parts)
+        message = (
+            f"📬 *Inbox update ({time_str})*\n"
+            f"{summary_line}\n\n"
+            f"Drafts in your email."
+        )
+        return self._send_telegram(message)
+
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _send_telegram(self, message: str) -> bool:

@@ -66,6 +66,8 @@ inbox-assistant/
 │   ├── feedback_handler.py    ← BCC feedback loop processor (see Roadmap)
 │   ├── attachment_handler.py  ← PDF/DOCX/ICS attachment classifier
 │   ├── notifier.py            ← Telegram notifications
+│   ├── task_writer.py          ← Task extraction to Obsidian TASKS.md
+│   ├── draft_on_demand.py     ← On-demand draft via email forwarding
 │   ├── urgent_check.py        ← Runs every 2 hours, alerts on new urgent mail
 │   └── dashboard.py           ← Weekly stats HTML generator
 │
@@ -105,8 +107,12 @@ inbox-assistant/
 |------|-----|---------|
 | 06:30 daily | `fetch_and_triage.py` | Morning briefing |
 | Every 2 hrs, 08:00–20:00 | `urgent_check.py` | Urgent alerts |
+| 13:00 + 17:00 Mon–Fri | `fetch_and_triage.py --mini` | Afternoon updates |
+| 06:45 daily | `dashboard.py` | Refresh dashboard HTML |
+| Every hour, 08:30–20:30 | `project_fetch.py` | Incremental project email archive |
+| Every 2 min, 08:00–20:00 Mon–Fri | `draft_on_demand.py` | On-demand draft via email forward |
 | Sunday 02:00 | `fetch_and_triage.py --regenerate-style` | Rebuild writing style profile |
-| Sunday 03:00 | `dashboard.py` | Refresh dashboard HTML |
+| Sunday 04:00 | `project_discover.py` | Discover new project suggestions |
 
 ## Customisation
 
@@ -138,6 +144,7 @@ generates the briefing, and sends it.
 | `--dry-run` | flag | off | Classify and preview without sending email, saving state, or pinging Telegram. Writes `data/preview.html` and `data/preview.md`. |
 | `--hours N` | int | from config | Override the lookback window (e.g. `--hours 48` for yesterday + today) |
 | `--no-drafts` | flag | off | Skip draft reply generation (saves API cost for large/retroactive runs) |
+| `--mini` | flag | off | Afternoon update mode: compact briefing email (URGENT + ACTION only), skip Obsidian note, Telegram ping for new items |
 | `--regenerate-style` | flag | off | Rebuild `writing-samples/style-profile.md` from the writing corpus, then exit without processing email |
 
 **Examples:**
@@ -145,6 +152,7 @@ generates the briefing, and sends it.
 python src/fetch_and_triage.py --dry-run              # safe preview
 python src/fetch_and_triage.py --dry-run --hours 48   # preview last 2 days
 python src/fetch_and_triage.py --hours 336 --no-drafts  # retroactive 2-week import
+python src/fetch_and_triage.py --mini                  # afternoon update (compact email)
 python src/fetch_and_triage.py --regenerate-style     # rebuild style profile
 ```
 
@@ -233,15 +241,44 @@ collaborator name/email fragment appears in the from, to, or cc fields.
 Inline attachments (embedded signature images) are always filtered out
 automatically regardless of `exclude_extensions`.
 
-**Optional cron** (add manually once you're satisfied with the output):
+**Cron** (already installed — runs hourly during work hours):
 ```
-0 20 * * * cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_fetch.py >> logs/project-fetch.log 2>&1
+30 8-20/1 * * * cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_fetch.py >> logs/project-fetch.log 2>&1
 ```
 
 > **Note:** The Gmail API returns at most 500 results per call. For most projects
 > this is more than enough, especially with a `since` date set. If a project
 > ever exceeds 500 matching emails, the oldest ones will be missed until
 > pagination support is added.
+
+---
+
+### `src/draft_on_demand.py` — On-demand draft generator
+
+Forward any email to `jeroenm+draft@gmail.com` to request a draft reply within
+2 minutes. The script fetches the full thread context from Gmail and, if the
+email matches a configured project, also loads recent project emails from your
+Obsidian vault for additional context.
+
+The draft is emailed to your UCM address — no Telegram notification.
+
+**Gmail setup required:** Create a filter in Gmail:
+- Matches: `to:jeroenm+draft@gmail.com`
+- Action: Apply label `_draft-request`, Skip inbox
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| *(none)* | | | Process pending draft requests |
+| `--dry-run` | flag | off | Preview without sending or modifying labels |
+
+**Configuration** (`config.yaml`):
+
+```yaml
+draft_on_demand:
+  enabled: true
+  label: "_draft-request"
+  send_to: "jeroen.moes@maastrichtuniversity.nl"
+```
 
 ---
 

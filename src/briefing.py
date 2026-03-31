@@ -1,9 +1,10 @@
 """
-Morning briefing generator.
+Briefing generator — morning briefing and afternoon mini-updates.
 
 Takes classified emails and draft replies, and produces:
   - An HTML email (for Gmail send / fallback delivery)
   - A Markdown daily note (for Obsidian vault, synced via Syncthing)
+  - A compact "mini" briefing for afternoon update runs (--mini mode)
 
 The Obsidian note is written to:
     {vault_path}/{briefing_folder}/YYYY-MM-DD.md
@@ -29,7 +30,8 @@ class BriefingGenerator:
 
     def generate(self, classifications: list[dict],
                  drafts: list[dict],
-                 attachment_summaries: dict | None = None) -> tuple[str, str]:
+                 attachment_summaries: dict | None = None,
+                 task_summary: list[dict] | None = None) -> tuple[str, str]:
         """Generate the briefing email.
 
         Args:
@@ -37,6 +39,7 @@ class BriefingGenerator:
             drafts:              Output of DraftComposer.compose_batch().
             attachment_summaries: Optional dict mapping email_id → list of
                                   attachment summary dicts from AttachmentHandler.
+            task_summary:        Optional list of task dicts from TaskWriter.
 
         Returns (subject, html_body).
         """
@@ -53,7 +56,8 @@ class BriefingGenerator:
 
         subject = self._make_subject(date_str, len(urgent), len(action))
         html = self._render_html(
-            date_str, urgent, action, fyi, noise, draft_lookup, att_lookup
+            date_str, urgent, action, fyi, noise, draft_lookup, att_lookup,
+            task_summary=task_summary,
         )
 
         return subject, html
@@ -73,7 +77,8 @@ class BriefingGenerator:
 
     def _render_html(self, date_str: str,
                      urgent: list, action: list, fyi: list, noise: list,
-                     draft_lookup: dict, att_lookup: dict | None = None) -> str:
+                     draft_lookup: dict, att_lookup: dict | None = None,
+                     task_summary: list[dict] | None = None) -> str:
         """Render the briefing as HTML email."""
         sections = []
 
@@ -126,6 +131,45 @@ class BriefingGenerator:
                     f'<p style="color: #94a3b8; font-size: 13px;">'
                     f'  ...and {remaining} more FYI items</p>'
                 )
+
+        # Task summary (if tasks were extracted)
+        if task_summary:
+            task_items_html = ""
+            for t in task_summary:
+                desc = t.get("description", "")
+                deadline = t.get("deadline")
+                time_est = t.get("time_estimate_minutes")
+                category = t.get("category", "ACTION")
+                icon = "⚡" if category == "URGENT" else "📋"
+
+                meta_parts = []
+                if deadline:
+                    meta_parts.append(f"due {deadline}")
+                if time_est:
+                    meta_parts.append(f"⏱ {time_est} min")
+                meta = f" — <em>{'  '.join(meta_parts)}</em>" if meta_parts else ""
+
+                task_items_html += (
+                    f"<div style='padding: 4px 0;'>"
+                    f"  {icon} {desc}{meta}"
+                    f"</div>\n"
+                )
+
+            sections.append(f"""
+            <div style="margin-top: 20px;">
+                <h2 style="font-size: 16px; color: #7c3aed; margin-bottom: 8px;">
+                    📌 Tasks Extracted
+                </h2>
+                <div style="background: #f5f3ff; border-radius: 6px;
+                            padding: 12px 16px; border-left: 3px solid #7c3aed;
+                            font-size: 13px;">
+                    {task_items_html}
+                </div>
+                <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">
+                    Full task list in your Obsidian vault → TASKS.md
+                </p>
+            </div>
+            """)
 
         # Noise summary
         if noise and self.show_noise_count:
@@ -253,6 +297,92 @@ class BriefingGenerator:
         html += "</div>"
         return html
 
+    # ── Mini briefing (afternoon updates) ────────────────────────────────────
+
+    def generate_mini(self, classifications: list[dict],
+                      drafts: list[dict],
+                      attachment_summaries: dict | None = None) -> tuple[str, str]:
+        """Generate a compact afternoon update email.
+
+        Only includes URGENT and ACTION items — no FYI, no noise summary.
+        Used by --mini mode for mid-day triage runs.
+
+        Returns (subject, html_body).
+        """
+        now = datetime.now(self.timezone)
+        date_str = now.strftime("%A %-d %B %Y")
+        time_str = now.strftime("%H:%M")
+
+        urgent = [c for c in classifications if c["category"] == "URGENT"]
+        action = [c for c in classifications if c["category"] == "ACTION"]
+
+        draft_lookup = {d["email_id"]: d for d in drafts}
+        att_lookup = attachment_summaries or {}
+
+        total = len(urgent) + len(action)
+        subject = self._make_mini_subject(time_str, len(urgent), len(action))
+
+        sections = []
+
+        # Header
+        sections.append(f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                     Roboto, sans-serif; max-width: 600px; margin: 0 auto;
+                     color: #333; line-height: 1.5;">
+        <h1 style="font-size: 18px; border-bottom: 2px solid #8b5cf6;
+                   padding-bottom: 8px; color: #1e293b;">
+            📬 Inbox Update — {time_str}, {date_str}
+        </h1>
+        <p style="color: #64748b; font-size: 14px;">
+            {total} new item(s) since the morning briefing
+        </p>
+        """)
+
+        if urgent:
+            sections.append(self._render_section(
+                "⚡ Needs attention today", urgent, draft_lookup,
+                color="#dc2626", bg="#fef2f2", att_lookup=att_lookup
+            ))
+
+        if action:
+            sections.append(self._render_section(
+                "📋 Reply needed", action, draft_lookup,
+                color="#d97706", bg="#fffbeb", att_lookup=att_lookup
+            ))
+
+        if not urgent and not action:
+            sections.append("""
+            <p style="color: #64748b; font-size: 14px; padding: 16px 0;">
+                No new items needing a reply. FYI and noise items will appear
+                in tomorrow's morning briefing.
+            </p>
+            """)
+
+        # Footer
+        sections.append("""
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 24px;">
+        <p style="color: #94a3b8; font-size: 12px;">
+            Afternoon update — Inbox Briefing Assistant.
+            Draft replies are AI-generated suggestions — review before sending.
+        </p>
+        </div>
+        """)
+
+        return subject, "\n".join(sections)
+
+    def _make_mini_subject(self, time_str: str,
+                           urgent_count: int, action_count: int) -> str:
+        """Create a subject line for the afternoon mini-briefing."""
+        parts = []
+        if urgent_count:
+            parts.append(f"⚡ {urgent_count} urgent")
+        if action_count:
+            parts.append(f"{action_count} to reply")
+
+        if parts:
+            return f"📬 Inbox Update ({time_str}) — {', '.join(parts)}"
+        return f"📬 Inbox Update ({time_str}) — No new action items"
+
     # ── Obsidian / Markdown output ────────────────────────────────────────────
 
     def generate_markdown(
@@ -260,6 +390,7 @@ class BriefingGenerator:
         classifications: list[dict],
         drafts: list[dict],
         attachment_summaries: dict | None = None,
+        task_summary: list[dict] | None = None,
     ) -> str:
         """Generate an Obsidian-compatible Markdown daily note.
 
@@ -335,6 +466,26 @@ class BriefingGenerator:
             if len(fyi) > self.max_fyi_items:
                 lines.append(f"- _...and {len(fyi) - self.max_fyi_items} more_")
             lines.append("")
+
+        # ── Task summary ──────────────────────────────────────────────────────
+        if task_summary:
+            lines += ["## 📌 Tasks Extracted", ""]
+            for t in task_summary:
+                desc = t.get("description", "")
+                deadline = t.get("deadline")
+                time_est = t.get("time_estimate_minutes")
+                category = t.get("category", "ACTION")
+                icon = "⚡" if category == "URGENT" else "📋"
+
+                meta_parts = []
+                if deadline:
+                    meta_parts.append(f"_due {deadline}_")
+                if time_est:
+                    meta_parts.append(f"⏱ {time_est} min")
+                meta = " — " + "  ".join(meta_parts) if meta_parts else ""
+
+                lines.append(f"- {icon} {desc}{meta}")
+            lines += ["", "_Full task list: [[TASKS]]_", ""]
 
         # ── Noise summary ─────────────────────────────────────────────────────
         if noise and self.show_noise_count:

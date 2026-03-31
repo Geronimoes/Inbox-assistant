@@ -77,9 +77,63 @@ Return a JSON array. For each email:
   "draft_tone": "formal | professional | warm | casual",
   "reply_language": "en | nl",
   "deadline": "YYYY-MM-DD or null",
-  "fyi_priority": "high | medium | low"
+  "fyi_priority": "high | medium | low",
+  "tasks": []
 }
 ```
+
+## Task extraction rules
+
+For URGENT and ACTION emails, extract concrete tasks into the `tasks` array.
+For FYI and NOISE emails, set `tasks` to an empty array `[]`.
+
+Each task in the array:
+
+```json
+{
+  "description": "Short imperative description of what Jeroen needs to do",
+  "task_type": "explicit | implicit",
+  "deadline": "YYYY-MM-DD or null",
+  "time_estimate_minutes": 5,
+  "complexity": "simple | complex",
+  "project": "project-id or null"
+}
+```
+
+**Field guidance:**
+
+- `description`: Imperative, specific, ≤15 words. Include key names, dates, or
+  specifics from the email. E.g. "Reply to Margaux about submission deadline" or
+  "Submit OSA course planning form for period 6".
+- `task_type`: "explicit" if the email directly asks Jeroen to do something
+  (review, submit, attend, reply by a date, approve). "implicit" if a response
+  or action is expected but not explicitly requested (e.g. a question that needs
+  answering, a meeting invitation that needs confirming).
+- `deadline`: Same as the email-level deadline if applicable, or null.
+- `time_estimate_minutes`: Rough estimate. Use 5 for quick replies, 15 for
+  reviews/reads, 30–60 for substantive work. Don't overthink this.
+- `complexity`: "simple" for single-step tasks (reply, confirm, forward).
+  "complex" for multi-step tasks that benefit from a brief step-by-step
+  breakdown (prepare a document, coordinate with multiple people, complete a
+  form with multiple inputs).
+- `project`: Match against the project list provided below the emails (if one
+  is provided). Use the project `id` string, or null if no project matches.
+
+**What counts as a task:**
+- Replying to a question or request
+- Reviewing a document or submission
+- Attending or confirming a meeting
+- Submitting a form or application
+- Making a decision that someone is waiting on
+- Forwarding information to someone
+
+**What is NOT a task:**
+- Reading an FYI announcement (that's just FYI)
+- A newsletter or notification (that's noise)
+- A thank-you note that needs no response
+
+An email may produce 0, 1, or multiple tasks. Most ACTION emails produce exactly
+1 task. Some produce 2 if the email asks for multiple things.
 
 ## Summary style rules
 
