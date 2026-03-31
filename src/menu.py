@@ -2,6 +2,7 @@
 inbox-assistant CLI menu.
 Run via the `inbox` wrapper script in the project root.
 """
+import os
 import sys
 import subprocess
 import pathlib
@@ -103,9 +104,12 @@ def _install(inbox_script: pathlib.Path):
     link = bin_dir / "inbox"
     if link.is_symlink():
         link.unlink()
+    elif link.exists():
+        print(f"\n{BOLD}Error:{RESET} {link} already exists and is not a symlink. Remove it manually.")
+        input(f"\n{DIM}Press Enter to return to menu...{RESET}")
+        return
     link.symlink_to(inbox_script)
     print(f"\n{BOLD}Installed:{RESET} {link}  ->  {inbox_script}")
-    import os
     path_env = os.environ.get("PATH", "")
     if str(bin_dir) not in path_env:
         print(
@@ -131,6 +135,7 @@ def main():
     numbered, menu_text = _build_index()
 
     while True:
+        # 'clear' is a Linux/macOS terminal command (this tool runs on a Linux VPS)
         subprocess.run(["clear"])
         print(menu_text)
         try:
