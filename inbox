@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve this script's real location, following symlinks.
+SCRIPT_REAL="$(realpath "${BASH_SOURCE[0]}")"
+DIR="$(dirname "$SCRIPT_REAL")"
+
+cd "$DIR"
+
+if [[ ! -d "env" ]]; then
+    echo "Error: virtualenv not found at $DIR/env/"
+    echo "Run: python3 -m venv env && pip install -r requirements.txt"
+    exit 1
+fi
+
+source env/bin/activate
+exec python src/menu.py "$SCRIPT_REAL" "$@"
