@@ -24,7 +24,25 @@
       "Bash(env/bin/python -c \"import ast; ast.parse\\(open\\(''src/task_writer.py''\\).read\\(\\)\\); print\\(''task_writer.py OK''\\)\")",
       "Bash(env/bin/python -c \":*)",
       "Bash(env/bin/python -c \"import yaml; yaml.safe_load\\(open\\(''config.yaml''\\).read\\(\\)\\); print\\(''config.yaml: OK''\\)\")",
-      "Bash(env/bin/python -c \"import yaml; yaml.safe_load\\(open\\(''config.example.yaml''\\).read\\(\\)\\); print\\(''config.example.yaml: OK''\\)\")"
+      "Bash(env/bin/python -c \"import yaml; yaml.safe_load\\(open\\(''config.example.yaml''\\).read\\(\\)\\); print\\(''config.example.yaml: OK''\\)\")",
+      "Bash(chmod +x /home/jeroen/projects/inbox-assistant/inbox)",
+      "Bash(./inbox --help)",
+      "Read(//tmp/**)",
+      "Bash(ln -s /home/jeroen/projects/inbox-assistant/inbox /tmp/test-inbox-symlink)",
+      "Bash(/tmp/test-inbox-symlink --help)",
+      "Bash(git:*)",
+      "Bash(python -m pytest tests/test_menu.py -v)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/test_menu.py -v --tb=short)",
+      "Bash(python -c \"from src.menu import GROUPS; total = sum\\(len\\(items\\) for _, items in GROUPS\\); print\\(f''Groups: {len\\(GROUPS\\)}\\\\nTotal items: {total}\\\\nGroups:''\\); [print\\(f''  {header}: {len\\(items\\)} items''\\) for header, items in GROUPS]\")",
+      "Bash(python3:*)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(1 exitcode=$? echo 'Exit code: $exitcode')",
+      "Bash(~/.local/bin/inbox)",
+      "Bash(cd /home/jeroen/projects/inbox-assistant source env/bin/activate echo \"i:*)",
+      "Bash(cd /home/jeroen/projects/inbox-assistant source env/bin/activate echo \"6:*)",
+      "Bash(~/.local/bin/inbox 2)",
+      "Bash(1 echo:*)"
     ],
     "defaultMode": "acceptEdits"
   }
