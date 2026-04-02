@@ -2,8 +2,9 @@
 
 An AI-powered email triage system for a university professor. It runs on a VPS,
 reads forwarded work email from Gmail, and delivers a daily briefing with
-prioritised emails, draft replies, and urgent alerts. It also archives
-project-specific email threads directly into an Obsidian vault.
+prioritised emails, draft replies, and urgent alerts. All non-noise emails are
+archived as individual Markdown files in an Obsidian vault with rich YAML
+frontmatter, enabling project views, contact history, and draft context retrieval.
 
 ## What It Does
 
@@ -15,13 +16,15 @@ Every morning at 6:30 AM the system:
 4. **Generates a briefing** — sent to the university email address and written as an Obsidian daily note
 5. **Pings Telegram** with a count summary (urgent, action, FYI, noise)
 6. **Alerts via Telegram** if urgent emails arrive between checks (every 2 hours, 8 AM–8 PM)
-7. **Tracks stats** for the weekly dashboard
+7. **Archives emails** — saves all non-noise emails as individual Markdown files in the Obsidian vault with rich YAML frontmatter (project tags, contacts, category, attachments)
+8. **Regenerates the index** — `_index.json` is rebuilt after each run for fast agent-based search
+9. **Tracks stats** for the weekly dashboard
 
-Separately, on demand (or optionally via cron):
+Separately:
 
-8. **Archives project emails** — fetches all emails related to a configured project
-   (matched by subject keywords and collaborator names) and saves each as an individual
-   Markdown note in the Obsidian vault, with attachments saved alongside
+10. **On-demand drafts** — forward any email to `+draft` address for a draft reply within 2 minutes
+11. **Retroactive backfill** — classify and archive older emails by project, contact, or keyword
+12. **Project discovery** — weekly LLM scan suggests new projects to track
 
 ## Architecture
 
@@ -31,18 +34,22 @@ University mail (UCM Exchange)
       ▼
 Gmail inbox  ──label: _UCM-redirect──►  Gmail API
                                               │
-                        ┌─────────────────────┴──────────────────────┐
-                        │                                             │
-            fetch_and_triage.py  (cron 06:30)           project_fetch.py  (manual / cron)
-                        │                                             │
-          ┌─────────────┼──────────┐                  ┌──────────────┴──────────────┐
-          ▼             ▼          ▼                   ▼                             ▼
-     Claude API    Obsidian    Telegram          Obsidian vault               assets/ folder
-     classify+     daily       morning           one note per email            attachments
-     draft         note        ping              in project folder              (.docx, .xlsx…)
-          │
+                                    fetch_and_triage.py  (cron 06:30)
+                                              │
+          ┌──────────┬──────────┬─────────────┼──────────────┐
+          ▼          ▼          ▼             ▼              ▼
+     Claude API  Obsidian   Telegram    email_archiver   Stats
+     classify+   daily      morning     saves non-noise  dashboard
+     draft       note       ping        emails to vault
+          │                             + _index.json
           ▼
      Briefing email → university address
+
+Obsidian vault (inbox-emails/):
+    mail/*.md           ← individual emails with YAML frontmatter
+    mail/assets/        ← saved attachments
+    _index.json         ← frontmatter index (auto-regenerated)
+    _views/*.base       ← Obsidian Base views per project/category
 ```
 
 ## Project Structure
@@ -56,7 +63,11 @@ inbox-assistant/
 │
 ├── src/
 │   ├── fetch_and_triage.py    ← Main orchestrator (entry point)
-│   ├── project_fetch.py       ← Project email archiver (entry point)
+│   ├── email_archiver.py      ← Unified email archive: save, index, context retrieval
+│   ├── project_fetch.py       ← Project email backfill (manual, uses email_archiver)
+│   ├── project_discover.py    ← LLM-based project suggestion discovery
+│   ├── archive_cleanup.py     ← Archive maintenance: report, deduplicate, prune
+│   ├── migrate_project_archive.py ← One-off migration to unified archive
 │   ├── gmail_client.py        ← Gmail API: fetch, send, draft, archive, attachments
 │   ├── llm_client.py          ← Multi-provider LLM abstraction
 │   ├── classifier.py          ← Email classification
@@ -66,9 +77,10 @@ inbox-assistant/
 │   ├── feedback_handler.py    ← BCC feedback loop processor (see Roadmap)
 │   ├── attachment_handler.py  ← PDF/DOCX/ICS attachment classifier
 │   ├── notifier.py            ← Telegram notifications
-│   ├── task_writer.py          ← Task extraction to Obsidian TASKS.md
+│   ├── task_writer.py         ← Task extraction to Obsidian TASKS.md
 │   ├── draft_on_demand.py     ← On-demand draft via email forwarding
 │   ├── urgent_check.py        ← Runs every 2 hours, alerts on new urgent mail
+│   ├── menu.py                ← Interactive CLI menu for common operations
 │   └── dashboard.py           ← Weekly stats HTML generator
 │
 ├── prompts/
@@ -90,7 +102,8 @@ inbox-assistant/
 │
 ├── data/
 │   ├── processed.json              ← Processed email IDs + thread state (never commit)
-│   ├── project-export-state.json   ← Tracks which emails project_fetch.py has saved (never commit)
+│   ├── archive-state.json          ← Tracks which emails are archived (never commit)
+│   ├── project-export-state.json   ← Legacy project export state (never commit)
 │   └── weekly-stats.json           ← Dashboard data (never commit)
 │
 ├── dashboard/                 ← Generated HTML (also written to Caddy sites/)
@@ -109,7 +122,6 @@ inbox-assistant/
 | Every 2 hrs, 08:00–20:00 | `urgent_check.py` | Urgent alerts |
 | 13:00 + 17:00 Mon–Fri | `fetch_and_triage.py --mini` | Afternoon updates |
 | 06:45 daily | `dashboard.py` | Refresh dashboard HTML |
-| Every hour, 08:30–20:30 | `project_fetch.py` | Incremental project email archive |
 | Every 2 min, 08:00–20:00 Mon–Fri | `draft_on_demand.py` | On-demand draft via email forward |
 | Sunday 02:00 | `fetch_and_triage.py --regenerate-style` | Rebuild writing style profile |
 | Sunday 04:00 | `project_discover.py` | Discover new project suggestions |
@@ -158,107 +170,93 @@ python src/fetch_and_triage.py --regenerate-style     # rebuild style profile
 
 ---
 
-### `src/project_fetch.py` — Project email archiver
+### `src/email_archiver.py` — Unified email archive
 
-Fetches emails related to a specific project — matched by subject keywords and
-collaborator names — and saves each as an individual Markdown note in the
-Obsidian vault. Attachments (e.g. `.docx`, `.xlsx`) are saved in an `assets/`
-subfolder alongside the notes and linked from within them.
+Core module for all email archiving. Used by `fetch_and_triage.py` (ongoing triage),
+`project_fetch.py` (retroactive backfill), and `draft_on_demand.py` (context retrieval).
 
-Projects are defined in the `projects:` section of `config.yaml`. Each project
-specifies keywords, collaborators, a vault folder, and optional filters. The
-script tracks which emails it has already saved in `data/project-export-state.json`
-so re-runs only process new mail.
+All non-noise emails are saved as individual Markdown files in a flat directory
+(`inbox-emails/mail/`) with rich YAML frontmatter. Project membership, categories,
+and contacts are encoded in frontmatter fields and queried via Obsidian Bases or
+the JSON index (`_index.json`).
+
+**Frontmatter schema:**
+
+```yaml
+---
+date: "2026-04-02"
+subject: "RE: PRO3030 assessment plan"
+from: "\"Deelman, Annechien\" <a.deelman@maastrichtuniversity.nl>"
+to: "\"Moes, Jeroen\" <jeroen.moes@maastrichtuniversity.nl>"
+cc: "\"Savelberg, Hans\" <hans.savelberg@maastrichtuniversity.nl>"
+thread_id: "18abc123def"
+gmail_id: "18abc123def456"
+category: ACTION                    # URGENT / ACTION / FYI
+priority: normal                    # high / normal / low
+inbox-projects:                     # list (email can belong to multiple)
+  - wicked-problems
+contacts:                           # all email addresses involved
+  - a.deelman@maastrichtuniversity.nl
+  - jeroen.moes@maastrichtuniversity.nl
+  - hans.savelberg@maastrichtuniversity.nl
+language: en                        # en / nl
+has_attachments: true
+saved_attachments:
+  - "Assessment Plan UCM PRO3030.xlsx"
+task_extracted: false
+tags:
+  - inbox-email                     # always present
+  - inbox-action                    # category tag (inbox-urgent/inbox-action/inbox-fyi)
+  - wicked-problems                 # project tags
+---
+```
+
+**JSON index:** After each archiving run, `_index.json` is regenerated with
+frontmatter from all archived emails. Agents can read this single file to search
+the archive without opening hundreds of individual files.
+
+---
+
+### `src/project_fetch.py` — Project email backfill
+
+Fetches emails related to configured projects and archives them via
+`email_archiver.py`. Used for retroactive backfill only — ongoing archiving
+happens automatically during triage runs.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | *(none)* | | | Export all projects, last 24 hours |
-| `--all` | flag | off | Fetch full history (up to 500 matching emails, respecting `since` if set) |
+| `--all` | flag | off | Fetch full history (up to 500 matching emails) |
 | `--hours N` | int | from config | Custom lookback window |
-| `--project ID` | string | all projects | Run for a single project by its `id` field |
-| `--dry-run` | flag | off | Preview matches and file paths without writing anything |
-
-**Examples:**
-```bash
-python src/project_fetch.py --all --dry-run          # preview full history
-python src/project_fetch.py --all                    # initial backfill
-python src/project_fetch.py                          # daily incremental (last 24h)
-python src/project_fetch.py --project wicked-problems --hours 72
-```
-
-**Obsidian note format:**
-
-Each email is saved as `YYYY-MM-DD Subject.md` in the configured vault folder,
-with YAML frontmatter containing all metadata:
-
-```markdown
----
-date: 2026-03-25
-subject: "RE: PRO3030 assessment plan"
-from: "Annechien Deelman <a.deelman@maastrichtuniversity.nl>"
-to: "Jeroen Moes <j.moes@maastrichtuniversity.nl>"
-cc: "Hans Savelberg <h.savelberg@maastrichtuniversity.nl>"
-thread_id: "thread_abc123"
-gmail_id: "msg_xyz789"
-project: "Wicked Problems"
-tags:
-  - project-email
-  - wicked-problems
----
-
-(email body)
-
----
-
-**Attachments**
-
-- [Assessment Plan UCM PRO3030.xlsx](assets/Assessment Plan UCM PRO3030.xlsx)
-```
+| `--project ID` | string | all projects | Run for a single project by its `id` |
+| `--dry-run` | flag | off | Preview without writing |
 
 **Project configuration** (`config.yaml`):
 
 ```yaml
 projects:
-  - id: wicked-problems            # used for --project flag and state file key
-    name: "Wicked Problems"        # shown in log output
-    vault_folder: "inbox-projects/wicked-problems"  # relative to obsidian.vault_path
-    since: "2025-08-01"            # optional: ignore emails before this date
-    attachment_max_size_mb: 7      # optional: save attachments up to this size
-    exclude_extensions:            # optional: attachment types to skip
-      - ".ics"
-    keywords:                      # match against email subject (case-insensitive)
-      - "Wicked Problems"
-      - "PRO3030"
-    collaborators:                 # match against from/to/cc fields
+  - id: wicked-problems
+    name: "Wicked Problems"
+    vault_folder: "inbox-emails"    # unified archive (all projects share this)
+    since: "2025-08-01"
+    attachment_max_size_mb: 7
+    exclude_extensions: [".ics"]
+    keywords: ["Wicked Problems", "PRO3030"]
+    collaborators:
       - name: "Annechien Deelman"
-        email_fragment: "deelman"  # optional partial email address
+        email_fragment: "deelman"
       - name: "Hans Savelberg"
         email_fragment: "savelberg"
 ```
-
-An email is included if **either** the subject contains a keyword **or** a
-collaborator name/email fragment appears in the from, to, or cc fields.
-Inline attachments (embedded signature images) are always filtered out
-automatically regardless of `exclude_extensions`.
-
-**Cron** (already installed — runs hourly during work hours):
-```
-30 8-20/1 * * * cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_fetch.py >> logs/project-fetch.log 2>&1
-```
-
-> **Note:** The Gmail API returns at most 500 results per call. For most projects
-> this is more than enough, especially with a `since` date set. If a project
-> ever exceeds 500 matching emails, the oldest ones will be missed until
-> pagination support is added.
 
 ---
 
 ### `src/draft_on_demand.py` — On-demand draft generator
 
 Forward any email to `jeroenm+draft@gmail.com` to request a draft reply within
-2 minutes. The script fetches the full thread context from Gmail and, if the
-email matches a configured project, also loads recent project emails from your
-Obsidian vault for additional context.
+2 minutes. The script fetches the full thread context from Gmail and loads
+relevant archived emails (same thread, same sender) from the unified archive
+for additional context.
 
 The draft is emailed to your UCM address — no Telegram notification.
 

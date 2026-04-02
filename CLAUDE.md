@@ -34,6 +34,8 @@ fetch_and_triage.py  (cron 06:30, venv python)
       ├── LLM: classify + draft  (llm_client.py → Anthropic)
       ├── Briefing email → Jeroen's UCM address  (gmail_client.py)
       ├── Obsidian note → ~/syncthing/data/Notes/inbox-briefings/
+      ├── Email archive → ~/syncthing/data/Notes/inbox-emails/mail/  (email_archiver.py)
+      │     └── _index.json regenerated after each run
       ├── Telegram ping  (notifier.py)
       └── Stats → /home/jeroen/caddy/sites/inbox-dashboard/index.html
 ```
@@ -53,8 +55,9 @@ fetch_and_triage.py  (cron 06:30, venv python)
 | `writing-samples/style-profile.md` | LLM-generated weekly style guide. |
 | `attachments/` | Saved email attachments, sorted by type. |
 | `data/` | `processed.json` (thread state), `weekly-stats.json` (dashboard), `archive-state.json` (email archive). |
-| `{vault}/inbox-emails/` | Unified email archive — all non-noise emails as individual markdown files. |
-| `{vault}/inbox-emails/assets/` | Saved email attachments from the archive. |
+| `{vault}/inbox-emails/` | Unified email archive root (contains views, index, and CLAUDE.md). |
+| `{vault}/inbox-emails/mail/` | All non-noise emails as individual markdown files (flat directory). |
+| `{vault}/inbox-emails/mail/assets/` | Saved email attachments from the archive. |
 | `{vault}/inbox-emails/_index.json` | JSON index of all email frontmatter (auto-regenerated after each triage/backfill). |
 | `{vault}/inbox-emails/_views/` | Obsidian Base files for project/category views. |
 | `{vault}/TASKS.md` | Master task list in Obsidian vault (auto-generated, user-editable). |
@@ -124,6 +127,7 @@ data/weekly-stats.json
 | `python src/archive_cleanup.py --prune-attachments` | Preview old large attachment cleanup | On-demand |
 | `python src/migrate_project_archive.py --dry-run` | Preview project archive migration | One-off |
 | `python src/migrate_project_archive.py` | Migrate project archives to inbox-emails/ | One-off |
+| `python src/migrate_project_archive.py --source DIR --project-id ID` | Migrate from a custom source directory | One-off |
 
 Always activate the virtualenv first: `source env/bin/activate`
 
