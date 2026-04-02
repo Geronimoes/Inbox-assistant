@@ -29,6 +29,7 @@ from feedback_handler import process_feedback_dir
 from attachment_handler import AttachmentHandler
 from notifier import Notifier
 from task_writer import TaskWriter
+from email_archiver import EmailArchiver
 
 
 def load_config() -> dict:
@@ -195,6 +196,124 @@ def save_state(data_dir: Path, processed_ids: set, thread_state: dict) -> None:
     tmp.replace(data_dir / "processed.json")
 
 
+def _run_backfill(args, config, project_root, data_dir, style_manager):
+    """Retroactive archive mode: fetch older emails, classify, and archive.
+
+    Supports filtering by project, contact, or keyword. No briefing, no drafts,
+    no telegram — just classify + archive to Obsidian vault.
+    """
+    from email_archiver import EmailArchiver, matches_project as _matches_project
+
+    archive_cfg = config.get("archive", {})
+    if not archive_cfg.get("enabled", False):
+        print("✗ archive.enabled is not set to true in config.yaml.")
+        sys.exit(1)
+
+    hours = args.hours or 720  # default: 30 days for backfill
+    print(f"\n── Backfill mode: fetching emails from the last {hours} hours...")
+
+    # Connect to Gmail
+    gmail = GmailClient(
+        credentials_file=str(project_root / config["gmail"]["credentials_file"]),
+        token_file=str(project_root / config["gmail"]["token_file"]),
+    )
+    try:
+        gmail.authenticate()
+    except Exception as e:
+        print(f"✗ Gmail authentication failed: {e}")
+        print("  Run: python src/gmail_client.py --auth --headless")
+        sys.exit(1)
+
+    # Build Gmail query for server-side filtering
+    extra_query = ""
+    if args.contact:
+        extra_query = f"from:{args.contact} OR to:{args.contact}"
+    elif args.keyword:
+        kw = args.keyword
+        extra_query = f'subject:"{kw}"' if " " in kw else f"subject:{kw}"
+    elif args.project:
+        # Find the project config and build its query
+        projects = config.get("projects", [])
+        proj = next((p for p in projects if p["id"] == args.project), None)
+        if not proj:
+            known = [p["id"] for p in projects]
+            print(f"✗ Project '{args.project}' not found. Known: {', '.join(known)}")
+            sys.exit(1)
+        from project_fetch import build_gmail_query
+        extra_query = build_gmail_query(proj)
+        print(f"  Project query: {extra_query}")
+
+    # Fetch
+    emails = gmail.fetch_recent_emails(
+        hours=hours,
+        labels=config["gmail"].get("scan_labels", ["INBOX"]),
+        max_results=500,
+        extra_query=extra_query,
+    )
+    if not emails:
+        print("No emails found for the given criteria.")
+        return
+
+    # Set up archiver and filter out already-archived
+    config["_project_root"] = str(project_root)
+    archiver = EmailArchiver(config, gmail_client=gmail)
+    new_emails = [e for e in emails if e["id"] not in archiver.archived_ids]
+
+    if not new_emails:
+        print(f"All {len(emails)} emails already archived.")
+        return
+
+    print(f"  {len(new_emails)} new email(s) to classify and archive "
+          f"({len(emails) - len(new_emails)} already archived)")
+
+    # Apply post-fetch filters
+    if args.project:
+        projects = config.get("projects", [])
+        proj = next((p for p in projects if p["id"] == args.project), None)
+        if proj:
+            new_emails = [e for e in new_emails if _matches_project(e, proj)]
+            print(f"  {len(new_emails)} match project '{args.project}'")
+
+    if args.contact:
+        contact = args.contact.lower()
+        new_emails = [e for e in new_emails
+                      if contact in (e.get("from", "") + e.get("to", "") + e.get("cc", "")).lower()]
+        print(f"  {len(new_emails)} match contact '{args.contact}'")
+
+    if not new_emails:
+        print("No new matching emails to process.")
+        return
+
+    # Classify
+    llm_config = config.get("llm")
+    if not llm_config:
+        print("✗ No 'llm' section in config.yaml.")
+        sys.exit(1)
+    llm = LLMClient(llm_config)
+
+    print(f"\n── Classifying {len(new_emails)} emails...")
+    projects = config.get("projects", [])
+    classifier = EmailClassifier(llm, projects=projects)
+    classifications = classifier.classify_batch(new_emails)
+
+    cats = {}
+    for cls in classifications:
+        cat = cls.get("category", "?")
+        cats[cat] = cats.get(cat, 0) + 1
+    for cat, count in sorted(cats.items()):
+        icon = {"URGENT": "⚡", "ACTION": "📋", "FYI": "🔵", "NOISE": "⚪"}.get(cat, "?")
+        print(f"  {icon} {count} {cat.lower()}")
+
+    # Archive
+    archived_count = archiver.archive_batch(
+        new_emails, classifications,
+        dry_run=args.dry_run,
+    )
+    mode = "DRY RUN — would archive" if args.dry_run else "Archived"
+    print(f"\n── {mode} {archived_count} email(s) to Obsidian vault")
+    print("✓ Backfill complete!")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Inbox Briefing Assistant")
     parser.add_argument("--dry-run", action="store_true",
@@ -208,6 +327,14 @@ def main():
                              "skip Obsidian note, Telegram ping for new items only")
     parser.add_argument("--regenerate-style", action="store_true",
                         help="Regenerate the writing style profile from corpus, then exit")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Retroactive archive mode: classify and archive older emails")
+    parser.add_argument("--project", metavar="PROJECT_ID",
+                        help="(Backfill) Only archive emails matching this project")
+    parser.add_argument("--contact", metavar="EMAIL",
+                        help="(Backfill) Only archive emails from/to this contact")
+    parser.add_argument("--keyword", metavar="KEYWORD",
+                        help="(Backfill) Only archive emails matching this subject keyword")
     args = parser.parse_args()
 
     config = load_config()
@@ -230,6 +357,13 @@ def main():
             print("\n✓ Style profile updated. Drafts will use it from the next run.")
         else:
             print("\n✗ Style profile could not be generated (see above).")
+        return
+
+    # ── Backfill mode ──────────────────────────────────────
+    # Retroactive archiving: fetch older emails, classify them, archive non-noise.
+    # No briefing, no drafts, no telegram — just classify + archive.
+    if args.backfill:
+        _run_backfill(args, config, project_root, data_dir, style_manager)
         return
 
     # ── 1. Load state + process BCC feedback ─────────────
@@ -347,6 +481,30 @@ def main():
                 written = task_writer.write_tasks(new_tasks)
                 if written:
                     print(f"\n── {written} task(s) added to TASKS.md")
+
+    # ── 4c. Archive emails to Obsidian vault ─────────────
+    # Save individual non-noise emails as Markdown files with rich frontmatter.
+    # Uses the archive: section in config.yaml. Skipped if archive.enabled is false.
+    archive_cfg = config.get("archive", {})
+    if archive_cfg.get("enabled", False):
+        # Inject project root so EmailArchiver can find data/
+        config["_project_root"] = str(project_root)
+        archiver = EmailArchiver(config, gmail_client=gmail)
+
+        # Collect email IDs that had tasks extracted
+        task_email_ids = set()
+        for t in new_tasks:
+            eid = t.get("email_id", "")
+            if eid:
+                task_email_ids.add(eid)
+
+        archived_count = archiver.archive_batch(
+            new_emails, classifications,
+            task_email_ids=task_email_ids,
+            dry_run=args.dry_run,
+        )
+        mode = "DRY RUN — would archive" if args.dry_run else "Archived"
+        print(f"\n── {mode} {archived_count} email(s) to Obsidian vault")
 
     # ── 5. Process attachments ───────────────────────────
     # Build a lookup: email_id → list of attachment summaries
@@ -491,7 +649,7 @@ def main():
                 )
 
         # Archive noise (if enabled)
-        if config.get("archive", {}).get("auto_archive_noise", False):
+        if config.get("gmail_archive", {}).get("auto_archive_noise", False):
             noise_ids = [c["email_id"] for c in noise]
             if noise_ids:
                 print(f"\n── Archiving {len(noise_ids)} noise items...")

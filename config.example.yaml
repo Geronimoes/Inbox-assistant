@@ -152,14 +152,38 @@ alerts:
   method: "email"
   alert_to: "you@gmail.com"
 
-# ── Archive behavior ────────────────────────────────────
-archive:
-  auto_archive_noise: false              # Set true to auto-archive noise
+# ── Gmail archive behavior ──────────────────────────────
+gmail_archive:
+  auto_archive_noise: false              # Set true to auto-archive noise in Gmail
   # Even when true, only archives:
   # - Promotional emails
   # - Automated notifications
   # - Mailing list digests
   # Never archives anything classified as ACTION or above.
+
+# ── Email archiver (Obsidian vault) ────────────────────
+# Saves individual non-noise emails as Markdown files in the Obsidian vault
+# with rich YAML frontmatter. Enables per-project views, draft context
+# retrieval, and a searchable email knowledge base.
+archive:
+  enabled: false                         # Set to true to enable email archiving
+  vault_folder: "inbox-emails"           # Directory inside obsidian.vault_path
+  mail_folder: "mail"                    # Subdirectory for email files (keeps root clean for views)
+  categories:                            # Which triage categories to archive
+    - URGENT
+    - ACTION
+    - FYI
+  attachments:
+    save_for:                            # Save attachments for these categories
+      - URGENT
+      - ACTION
+    max_size_mb: 10                      # Skip attachments larger than this
+    exclude_extensions:                  # File types to skip
+      - ".ics"
+      - ".vcf"
+    exclude_mime_prefixes:               # MIME type prefixes to skip
+      - "image/"                         # Skips inline images (signatures, etc.)
+  assets_folder: "assets"                # Attachment subdirectory (relative to vault_folder)
 
 # ── Logging ─────────────────────────────────────────────
 logging:

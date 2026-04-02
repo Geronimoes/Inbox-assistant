@@ -33,10 +33,12 @@ GROUPS = [
         {"label": "Process on-demand drafts",        "cmd": ["python", "src/draft_on_demand.py"]},
         {"label": "Preview draft requests (dry-run)","cmd": ["python", "src/draft_on_demand.py", "--dry-run"]},
     ]),
-    ("Project Archive", [
-        {"label": "Incremental project fetch",       "cmd": ["python", "src/project_fetch.py"]},
-        {"label": "Backfill all projects (dry-run)", "cmd": ["python", "src/project_fetch.py", "--all", "--dry-run"]},
-        {"label": "Backfill all projects",           "cmd": ["python", "src/project_fetch.py", "--all"]},
+    ("Email Archive", [
+        {"label": "Backfill: last 30 days (dry-run)",  "cmd": ["python", "src/fetch_and_triage.py", "--backfill", "--hours", "720", "--dry-run"]},
+        {"label": "Backfill: last 30 days",            "cmd": ["python", "src/fetch_and_triage.py", "--backfill", "--hours", "720"]},
+        {"label": "Backfill: all projects (dry-run)",  "cmd": ["python", "src/project_fetch.py", "--all", "--dry-run"]},
+        {"label": "Backfill: all projects",            "cmd": ["python", "src/project_fetch.py", "--all"]},
+        {"label": "Migrate project archives",          "cmd": ["python", "src/migrate_project_archive.py", "--dry-run"]},
     ]),
     ("Project Discovery", [
         {"label": "Discover new projects (dry-run)", "cmd": ["python", "src/project_discover.py", "--dry-run"]},
@@ -44,6 +46,8 @@ GROUPS = [
         {"label": "Retroactive discovery — 6 months", "cmd": ["python", "src/project_discover.py", "--hours", "4320"]},
     ]),
     ("Maintenance", [
+        {"label": "Archive report",                  "cmd": ["python", "src/archive_cleanup.py", "--report"]},
+        {"label": "Deduplicate archive (preview)",   "cmd": ["python", "src/archive_cleanup.py", "--deduplicate"]},
         {"label": "Regenerate writing style profile","cmd": ["python", "src/fetch_and_triage.py", "--regenerate-style"]},
         {"label": "Re-authenticate Gmail",           "cmd": ["python", "src/gmail_client.py", "--auth", "--headless"]},
     ]),

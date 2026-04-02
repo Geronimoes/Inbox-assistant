@@ -29,6 +29,7 @@ from gmail_client import GmailClient
 from llm_client import LLMClient
 from drafter import DraftComposer
 from style_manager import StyleManager
+from email_archiver import find_context_emails, extract_email_address
 
 
 def load_config() -> dict:
@@ -63,38 +64,6 @@ def find_project_for_email(email: dict, projects: list[dict]) -> dict | None:
 
     return None
 
-
-def load_project_context(project: dict, vault_path: str) -> str:
-    """Load recent project emails from Obsidian vault for context.
-
-    Reads the most recent 5 markdown files from the project's vault folder,
-    extracting email bodies to provide conversation context.
-    """
-    vault = Path(vault_path).expanduser()
-    project_dir = vault / project.get("vault_folder", "")
-
-    if not project_dir.exists():
-        return ""
-
-    # Get recent markdown files sorted by modification time
-    md_files = sorted(
-        project_dir.glob("*.md"),
-        key=lambda f: f.stat().st_mtime,
-        reverse=True,
-    )[:5]
-
-    if not md_files:
-        return ""
-
-    context_parts = []
-    for md_file in md_files:
-        content = md_file.read_text(encoding="utf-8")
-        # Strip YAML frontmatter
-        content = re.sub(r'^---\n.*?\n---\n', '', content, flags=re.DOTALL)
-        # Truncate long emails
-        context_parts.append(content[:1500])
-
-    return "\n\n---\n\n".join(context_parts)
 
 
 def build_draft_email_html(email: dict, draft_text: str,
@@ -210,15 +179,31 @@ def main():
             except Exception as e:
                 print(f"  ⚠ Could not fetch thread: {e}")
 
-        # Check for project match and load project context
+        # Load context from the unified email archive (inbox-emails/)
+        # Searches by sender email and thread_id for relevant prior correspondence.
         project = find_project_for_email(email, projects)
         project_context = None
         project_name = None
-        if project and vault_path:
+        if project:
             project_name = project.get("name", project.get("id"))
-            project_context = load_project_context(project, vault_path)
+
+        if vault_path:
+            archive_cfg = config.get("archive", {})
+            vault_folder = archive_cfg.get("vault_folder", "inbox-emails")
+            mail_folder = archive_cfg.get("mail_folder", "mail")
+            archive_dir = Path(vault_path).expanduser() / vault_folder / mail_folder
+
+            sender_email = extract_email_address(email.get("from", ""))
+            project_context = find_context_emails(
+                archive_dir,
+                sender_email=sender_email,
+                thread_id=thread_id,
+                limit=5,
+                max_chars_per_email=1500,
+            )
             if project_context:
-                print(f"  Project match: {project_name}")
+                ctx_label = f"Project: {project_name}" if project_name else "Archive"
+                print(f"  {ctx_label} context loaded from vault")
 
         # Build a classification-like dict for the drafter
         # (the drafter expects a classification dict with needs_draft=True)

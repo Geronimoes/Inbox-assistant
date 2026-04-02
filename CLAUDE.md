@@ -52,7 +52,11 @@ fetch_and_triage.py  (cron 06:30, venv python)
 | `writing-samples/curated/` | Manually managed example sent emails for style training. |
 | `writing-samples/style-profile.md` | LLM-generated weekly style guide. |
 | `attachments/` | Saved email attachments, sorted by type. |
-| `data/` | `processed.json` (thread state) and `weekly-stats.json` (dashboard data). |
+| `data/` | `processed.json` (thread state), `weekly-stats.json` (dashboard), `archive-state.json` (email archive). |
+| `{vault}/inbox-emails/` | Unified email archive — all non-noise emails as individual markdown files. |
+| `{vault}/inbox-emails/assets/` | Saved email attachments from the archive. |
+| `{vault}/inbox-emails/_index.json` | JSON index of all email frontmatter (auto-regenerated after each triage/backfill). |
+| `{vault}/inbox-emails/_views/` | Obsidian Base files for project/category views. |
 | `{vault}/TASKS.md` | Master task list in Obsidian vault (auto-generated, user-editable). |
 | `{vault}/Tasks/` | Per-project and complex task detail files (auto-generated). |
 | `logs/` | Cron output logs. |
@@ -87,6 +91,7 @@ writing-samples/curated/*.txt
 writing-samples/curated/*.md
 data/processed.json
 data/project-export-state.json
+data/archive-state.json
 data/weekly-stats.json
 ```
 
@@ -103,14 +108,22 @@ data/weekly-stats.json
 | `python src/urgent_check.py` | Check for urgent items only | Cron every 2 hrs 08:00–20:00 |
 | `python src/dashboard.py` | Regenerate dashboard HTML | Cron 06:45 daily |
 | `python src/gmail_client.py --auth --headless` | Re-authenticate Gmail OAuth | When token expires |
-| `python src/project_fetch.py --all --dry-run` | Preview project email archive | Testing |
+| `python src/project_fetch.py --all --dry-run` | Preview project email backfill | Testing |
 | `python src/project_fetch.py --all` | Backfill all project emails | Initial setup / retroactive |
-| `python src/project_fetch.py` | Incremental project email archive | Cron hourly 08:30–20:30 |
 | `python src/project_discover.py --dry-run` | Preview project suggestions | Testing |
 | `python src/project_discover.py` | Discover and email new project suggestions | Cron Sunday 04:00 |
 | `python src/draft_on_demand.py` | Process on-demand draft requests | Cron every 2 min Mon–Fri 08:00–20:00 |
 | `python src/draft_on_demand.py --dry-run` | Preview draft requests | Testing |
 | `python src/project_discover.py --hours 4320` | Retroactive discovery (6 months) | One-off deep scan |
+| `python src/fetch_and_triage.py --backfill --hours 720` | Backfill archive: last 30 days | One-off retroactive |
+| `python src/fetch_and_triage.py --backfill --project ID` | Backfill archive for a project | Targeted retroactive |
+| `python src/fetch_and_triage.py --backfill --contact EMAIL` | Backfill archive for a contact | Targeted retroactive |
+| `python src/fetch_and_triage.py --backfill --keyword WORD` | Backfill archive by subject keyword | Targeted retroactive |
+| `python src/archive_cleanup.py --report` | Archive size/age/contact report | On-demand |
+| `python src/archive_cleanup.py --deduplicate` | Find duplicate archived emails | On-demand |
+| `python src/archive_cleanup.py --prune-attachments` | Preview old large attachment cleanup | On-demand |
+| `python src/migrate_project_archive.py --dry-run` | Preview project archive migration | One-off |
+| `python src/migrate_project_archive.py` | Migrate project archives to inbox-emails/ | One-off |
 
 Always activate the virtualenv first: `source env/bin/activate`
 
@@ -155,9 +168,16 @@ The VPS has no browser. Authentication requires SSH port forwarding via Tailscal
 | Change task file location | Edit `tasks.obsidian_file` / `tasks.detail_folder` in `config.yaml` |
 | Request an on-demand draft | Forward email to `jeroenm+draft@gmail.com` (processed within 2 min) |
 | Process old emails retroactively | `python src/fetch_and_triage.py --hours 336 --no-drafts` |
+| Backfill archive (general) | `python src/fetch_and_triage.py --backfill --hours 720` |
+| Backfill archive (one project) | `python src/fetch_and_triage.py --backfill --project wicked-problems` |
+| Backfill archive (one contact) | `python src/fetch_and_triage.py --backfill --contact "alice@uni.nl"` |
+| Backfill archive (keyword) | `python src/fetch_and_triage.py --backfill --keyword "assessment"` |
 | Add a new project to archive | Add an entry to `projects:` in `config.yaml` (see README) |
 | Initial project email backfill | `python src/project_fetch.py --all` |
-| Re-export a project from scratch | Delete its entry from `data/project-export-state.json`, then run `--all` |
+| Archive report (size, contacts) | `python src/archive_cleanup.py --report` |
+| Deduplicate archived emails | `python src/archive_cleanup.py --deduplicate --confirm` |
+| Prune old large attachments | `python src/archive_cleanup.py --prune-attachments --older-than 180 --min-size 5 --confirm` |
+| Migrate project archives | `python src/migrate_project_archive.py` (one-off, then `--delete`) |
 | Discover new projects to archive | `python src/project_discover.py --dry-run` (or wait for Sunday email) |
 | Retroactive project discovery | `python src/project_discover.py --hours 4320` (6 months lookback) |
 
@@ -199,7 +219,8 @@ Never silently fall back to a different provider — fail loudly with a named er
 0  17    * * 1-5   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --mini
 0  8-20/2 * * *   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/urgent_check.py
 45 6     * * *     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/dashboard.py
-30 8-20/1 * * *   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_fetch.py
+# project_fetch.py hourly cron removed — fetch_and_triage.py now archives emails during triage runs
+# Use project_fetch.py manually for retroactive backfill only: python src/project_fetch.py --all
 0  2     * * 0     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --regenerate-style
 0  4     * * 0     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_discover.py
 */2 8-20 * * 1-5   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/draft_on_demand.py

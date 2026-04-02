@@ -42,7 +42,12 @@
       "Bash(cd /home/jeroen/projects/inbox-assistant source env/bin/activate echo \"i:*)",
       "Bash(cd /home/jeroen/projects/inbox-assistant source env/bin/activate echo \"6:*)",
       "Bash(~/.local/bin/inbox 2)",
-      "Bash(1 echo:*)"
+      "Bash(1 echo:*)",
+      "Bash(xargs basename:*)",
+      "Bash(xargs -I{} basename {})",
+      "Bash(sed -i 's/ai-accessibility-audit/ai-accessibility/g' *.md)",
+      "Bash(echo \"✓ Fixed ai-accessibility tag in $\\(grep -l 'ai-accessibility' *.md)",
+      "Bash(xargs -0 sed -i '/^- other$/d' echo \"=== Verify ===\" grep -rh \"^- other$\" *.md)"
     ],
     "defaultMode": "acceptEdits"
   }
