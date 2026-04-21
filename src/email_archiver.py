@@ -93,32 +93,91 @@ def find_matching_projects(email: dict, projects: list[dict]) -> list[str]:
 
 # ── Filename sanitisation ───────────────────────────────────────────────────
 
-def sanitize_filename(date_str: str, subject: str) -> str:
-    """Build a safe filename from a date string and email subject.
+# Collapses any chain of reply/forward prefixes (Re:, RE:, Fw:, FWD:, and
+# common localised variants — Aw/Antw (DE/NL), Sv (SE), Vs (FI), Enc (PT),
+# Tr (FR), Rv (ES)) into a single canonical "Re: ". Case-insensitive, and
+# colon-optional (Exchange forwarding sometimes drops the colon). Applied
+# only to the filename derivation; the original subject is preserved in
+# frontmatter.
+_REPLY_PREFIX_RE = re.compile(
+    # Longest alternatives first (Python regex alternation is leftmost,
+    # so "fw" would otherwise swallow only the first two chars of "FWD").
+    r"^\s*(?:(?:fwd|antw|enc|re|fw|aw|sv|vs|tr|rv)\s*:?\s*)+",
+    re.IGNORECASE,
+)
 
-    Format: "YYYY-MM-DD Some Subject Here.md"
+# Max bytes for the subject portion of the filename. Total stem (date +
+# subject + [gmail_id]) is hard-capped at _MAX_STEM_BYTES to leave room
+# for Syncthing's "~YYYYMMDD-HHMMSS" versioning suffix under the NTFS
+# 255-byte per-component limit.
+_MAX_SUBJECT_BYTES = 120
+_MAX_STEM_BYTES = 180
+
+
+def _truncate_utf8(s: str, max_bytes: int) -> str:
+    """Truncate ``s`` so its UTF-8 encoding is <= ``max_bytes``, without
+    splitting a multibyte character. Tries to break on a word boundary."""
+    encoded = s.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return s
+    clipped = encoded[:max_bytes]
+    # Back off until we're on a valid UTF-8 boundary
+    while clipped and (clipped[-1] & 0xC0) == 0x80:
+        clipped = clipped[:-1]
+    out = clipped.decode("utf-8", errors="ignore")
+    # Prefer trimming at the last whitespace for readability
+    if " " in out:
+        out = out.rsplit(" ", 1)[0]
+    return out.strip(" -")
+
+
+def sanitize_filename(date_str: str, subject: str, gmail_id: str = "") -> str:
+    """Build a safe filename from a date string, email subject, and
+    optional gmail_id.
+
+    Format: ``YYYY-MM-DD Some Subject [abc123].md``
+
+    The gmail_id discriminator (first 6 chars) makes the filename stable
+    across re-imports and eliminates reliance on ``-2``/``-3`` numeric
+    suffixes for uniqueness. It's only omitted when no id is passed
+    (for backward compatibility with callers that don't have one).
     """
+    if _REPLY_PREFIX_RE.match(subject):
+        subject = "Re: " + _REPLY_PREFIX_RE.sub("", subject, count=1)
+
     clean = re.sub(r"[^\w\s-]", " ", subject, flags=re.UNICODE)
-    clean = re.sub(r"\s+", " ", clean).strip()
-    if len(clean) > 60:
-        clean = clean[:60].rsplit(" ", 1)[0]
-    clean = clean.strip(" -")
+    clean = re.sub(r"\s+", " ", clean).strip(" -")
     if not clean:
         clean = "no-subject"
-    return f"{date_str} {clean}.md"
+    clean = _truncate_utf8(clean, _MAX_SUBJECT_BYTES)
+
+    disc = gmail_id[:6] if gmail_id else ""
+    stem = f"{date_str} {clean}" + (f" [{disc}]" if disc else "")
+    stem = _truncate_utf8(stem, _MAX_STEM_BYTES)
+    return f"{stem}.md"
 
 
-def resolve_filename(dest_dir: Path, date_str: str, subject: str) -> Path:
-    """Return a Path that doesn't collide with existing files."""
-    base_name = sanitize_filename(date_str, subject)
+def resolve_filename(
+    dest_dir: Path, date_str: str, subject: str, gmail_id: str = ""
+) -> Path:
+    """Return a Path that doesn't collide with existing files.
+
+    Collision detection is case-insensitive so the result is safe on
+    NTFS/APFS peers (they treat case-variants as the same file).
+    """
+    base_name = sanitize_filename(date_str, subject, gmail_id)
     stem = base_name[:-3]
-    candidate = dest_dir / base_name
-    if not candidate.exists():
-        return candidate
+
+    existing = set()
+    if dest_dir.exists():
+        existing = {p.name.lower() for p in dest_dir.iterdir() if p.is_file()}
+
+    if base_name.lower() not in existing:
+        return dest_dir / base_name
     for n in range(2, 100):
-        candidate = dest_dir / f"{stem}-{n}.md"
-        if not candidate.exists():
-            return candidate
+        candidate = f"{stem}-{n}.md"
+        if candidate.lower() not in existing:
+            return dest_dir / candidate
     raise RuntimeError(f"Could not find a free filename for '{base_name}' in {dest_dir}")
 
 
@@ -176,8 +235,8 @@ def save_archive_state(data_dir: Path, archived_ids: set[str]) -> None:
 
 # ── Attachment handling ─────────────────────────────────────────────────────
 
-def should_save_attachment(att: dict, category: str, archive_cfg: dict) -> bool:
-    """Decide whether to save this attachment based on config rules.
+def should_save_attachment(att: dict, category: str, archive_cfg: dict) -> tuple[bool, str | None]:
+    """Decide whether to save this attachment. Returns (should_save, skip_reason).
 
     Args:
         att:         Attachment metadata dict from gmail_client._parse_message
@@ -186,18 +245,18 @@ def should_save_attachment(att: dict, category: str, archive_cfg: dict) -> bool:
     """
     att_cfg = archive_cfg.get("attachments", {})
 
+    # Skip inline attachments (signature images, logos)
+    if att.get("is_inline", False):
+        return False, "inline"
+
     # Check if we save attachments for this email category
     save_for = att_cfg.get("save_for", ["URGENT", "ACTION"])
     if category not in save_for:
-        return False
-
-    # Skip inline attachments (signature images, logos)
-    if att.get("is_inline", False):
-        return False
+        return False, f"skipped for {category} category"
 
     filename = att.get("filename", "")
     if not filename:
-        return False
+        return False, "missing filename"
 
     # Check excluded extensions
     ext = Path(filename).suffix.lower()
@@ -205,25 +264,27 @@ def should_save_attachment(att: dict, category: str, archive_cfg: dict) -> bool:
     # Normalise to lowercase with leading dot
     exclude_ext = [e if e.startswith(".") else f".{e}" for e in exclude_ext]
     if ext in exclude_ext:
-        return False
+        return False, "excluded extension"
 
     # Check excluded MIME prefixes
     mime = att.get("mime_type", "").lower()
     for prefix in att_cfg.get("exclude_mime_prefixes", []):
         if mime.startswith(prefix.lower()):
-            return False
+            return False, "excluded MIME type"
 
     # Check size limit
     max_mb = att_cfg.get("max_size_mb", 10)
     max_bytes = int(max_mb * 1024 * 1024)
     size = att.get("size_bytes", 0)
     if size > max_bytes:
-        return False
+        size_mb = size / (1024 * 1024)
+        return False, f"too large ({size_mb:.1f}MB > {max_mb}MB)"
 
-    return True
+    return True, None
 
 
 def save_attachment(
+
     email: dict,
     att: dict,
     assets_dir: Path,
@@ -273,6 +334,7 @@ def build_archive_frontmatter(
     classification: dict | None,
     matching_projects: list[str],
     saved_attachment_names: list[str],
+    skipped_attachments: list[str] | None = None,
     task_extracted: bool = False,
 ) -> str:
     """Build YAML frontmatter for an archived email note.
@@ -282,6 +344,7 @@ def build_archive_frontmatter(
         classification:        Classification result (may be None for backfill)
         matching_projects:     List of project IDs this email matches
         saved_attachment_names: List of filenames that were saved to assets/
+        skipped_attachments:   List of strings describing skipped attachments (filename + reason)
         task_extracted:        Whether task_writer extracted tasks from this email
     """
     _, date_str = parse_email_date(email.get("date", ""))
@@ -319,10 +382,16 @@ def build_archive_frontmatter(
     fields["language"] = language
 
     # Attachment tracking
-    has_attachments = bool(email.get("attachment_metadata"))
-    fields["has_attachments"] = has_attachments
+    all_attachments = email.get("attachment_metadata", [])
+    genuine_attachments = [a for a in all_attachments if not a.get("is_inline")]
+    fields["has_attachments"] = len(genuine_attachments) > 0
+    
     if saved_attachment_names:
-        fields["saved_attachments"] = saved_attachment_names
+        # Format as Obsidian WikiLinks so they are clickable in Properties view
+        fields["saved_attachments"] = [f"[[assets/{name}]]" for name in saved_attachment_names]
+    
+    if skipped_attachments:
+        fields["skipped_attachments"] = skipped_attachments
 
     # Task integration
     fields["task_extracted"] = task_extracted
@@ -404,41 +473,53 @@ class EmailArchiver:
 
         # Handle attachments
         saved_names = []
+        skipped_info = []
         att_links = []
         attachments = email.get("attachment_metadata", [])
         if attachments and self.gmail and self.assets_dir:
             for att in attachments:
-                if should_save_attachment(att, category, self.archive_cfg):
+                should_save, reason = should_save_attachment(att, category, self.archive_cfg)
+                if should_save:
                     result = save_attachment(
                         email, att, self.assets_dir, self.gmail, dry_run=dry_run,
                     )
                     if result:
-                        saved_names.append(result[0])
+                        # Use the actual filename as saved on disk for the link
+                        saved_names.append(result[1].name)
                         att_links.append(result)
+                elif reason != "inline":  # Don't clutter with signature images
+                    filename = att.get("filename", "unknown")
+                    skipped_info.append(f"{filename} ({reason})")
 
         # Build note content
         frontmatter = build_archive_frontmatter(
             email, classification, matching_projects, saved_names,
+            skipped_attachments=skipped_info,
             task_extracted=task_extracted,
         )
-        body = email.get("body_text", "").strip()
-        content = frontmatter + "\n\n" + body
 
-        # Append attachment links
+        
+        # Build attachment callout (at the top)
+        attachment_section = ""
         if att_links:
             links = "\n".join(
-                f"- [{name}](assets/{saved.name})"
+                f"- [[assets/{saved.name}|{name}]]"
                 for name, saved in att_links
             )
-            content += f"\n\n---\n\n**Attachments**\n\n{links}"
+            attachment_section = f"> [!paperclip] Attachments\n{links}\n\n"
 
-        content += "\n"
+        body = email.get("body_text", "").strip()
+        content = f"{frontmatter}\n\n{attachment_section}{body}\n"
 
         # Resolve filename and write
         _, date_str = parse_email_date(email.get("date", ""))
         dest = resolve_filename(
-            self.archive_dir, date_str, email.get("subject", "no-subject")
+            self.archive_dir,
+            date_str,
+            email.get("subject", "no-subject"),
+            email.get("gmail_id", ""),
         )
+
 
         if dry_run:
             print(f"    [DRY RUN] Would archive: {dest.name}")
