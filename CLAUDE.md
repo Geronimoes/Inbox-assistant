@@ -217,18 +217,40 @@ Never silently fall back to a different provider — fail loudly with a named er
 
 ## Cron Schedule
 
+> **⚠️ SUMMER MODE (set 2026-06-27 — restore in the last week of August).** To cut paid
+> API usage during the summer break, only a cheap archive-only run is active. All other
+> jobs are disabled (commented out in the live crontab). Pre-change crontab backup:
+> `cron/backups/crontab-20260627-163944.bak`.
+
+**Currently active:**
+
 ```
-30 6     * * *     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py
-0  13    * * 1-5   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --mini
-0  17    * * 1-5   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --mini
-0  8-20/2 * * *   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/urgent_check.py
-45 6     * * *     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/dashboard.py
-# project_fetch.py hourly cron removed — fetch_and_triage.py now archives emails during triage runs
-# Use project_fetch.py manually for retroactive backfill only: python src/project_fetch.py --all
-0  2     * * 0     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --regenerate-style
-0  4     * * 0     cd /home/jeroen/projects/inbox-assistant && env/bin/python src/project_discover.py
-*/2 8-20 * * 1-5   cd /home/jeroen/projects/inbox-assistant && env/bin/python src/draft_on_demand.py
+0 7-21/2 * * * cd /home/jeroen/projects/inbox-assistant && env/bin/python src/fetch_and_triage.py --backfill --hours 4
 ```
+
+Archive-only: fetch `_UCM-redirect` → classify (Haiku) → archive non-noise → regenerate
+`_index.json`. No briefing email, Telegram, drafts, tasks, or Sonnet. Every 2h, 07:00–21:00,
+4h lookback (dedup makes the overlap free).
+
+**Disabled for summer (canonical full schedule — re-enable in late August):**
+
+```
+30 6     * * *     env/bin/python src/fetch_and_triage.py                     # morning briefing (full pipeline)
+45 6     * * *     env/bin/python src/dashboard.py                            # dashboard HTML
+0  8-20/2 * * *    env/bin/python src/urgent_check.py                         # urgent alerts (every 2h)
+*/15 7-23 * * *    env/bin/python src/update_tasks.py                         # task housekeeping (every 15 min)
+0  2     * * 0     env/bin/python src/fetch_and_triage.py --regenerate-style  # weekly style profile
+0  4     * * 0     env/bin/python src/project_discover.py                     # weekly project discovery
+```
+
+Config flags `drafts.enabled` / `tasks.enabled` / `alerts.enabled` are also set to `false`
+for summer; `archive.enabled` stays `true`. **To restore:** revert the active line to the
+plain daily `fetch_and_triage.py`, uncomment the disabled crontab lines, and flip the three
+config flags back to `true`.
+
+> Drift note: the `--mini` afternoon runs (13:00/17:00) and `draft_on_demand.py` (every 2 min)
+> that earlier appeared here were never actually installed in the live crontab — removed to
+> match reality. `update_tasks.py` (every 15 min) *was* installed but had been undocumented.
 
 ---
 

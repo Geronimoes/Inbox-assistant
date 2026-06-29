@@ -116,15 +116,32 @@ inbox-assistant/
 
 ## Cron Schedule
 
+> **⚠️ Summer mode (set 2026-06-27 — restore in the last week of August):** only the
+> archive-only run below is active. All other jobs are disabled in the crontab, and
+> `drafts` / `tasks` / `alerts` are set to `false` in `config.yaml`, to cut paid API usage
+> over the break. Restore by reverting the active line to the plain daily `fetch_and_triage.py`,
+> uncommenting the disabled crontab lines, and flipping the three config flags back to `true`.
+
+**Currently active:**
+
 | Time | Job | Purpose |
 |------|-----|---------|
-| 06:30 daily | `fetch_and_triage.py` | Morning briefing |
-| Every 2 hrs, 08:00–20:00 | `urgent_check.py` | Urgent alerts |
-| 13:00 + 17:00 Mon–Fri | `fetch_and_triage.py --mini` | Afternoon updates |
+| Every 2 hrs, 07:00–21:00 | `fetch_and_triage.py --backfill --hours 4` | Archive-only: classify (Haiku) + archive + reindex; no briefing/drafts/Telegram |
+
+**Disabled for summer (full schedule — re-enable in late August):**
+
+| Time | Job | Purpose |
+|------|-----|---------|
+| 06:30 daily | `fetch_and_triage.py` | Morning briefing (full pipeline) |
 | 06:45 daily | `dashboard.py` | Refresh dashboard HTML |
-| Every 2 min, 08:00–20:00 Mon–Fri | `draft_on_demand.py` | On-demand draft via email forward |
+| Every 2 hrs, 08:00–20:00 | `urgent_check.py` | Urgent alerts |
+| Every 15 min, 07:00–23:00 | `update_tasks.py` | Task housekeeping (sync checked-off items) |
 | Sunday 02:00 | `fetch_and_triage.py --regenerate-style` | Rebuild writing style profile |
 | Sunday 04:00 | `project_discover.py` | Discover new project suggestions |
+
+> Drift note: earlier versions listed `--mini` afternoon runs (13:00/17:00) and a
+> `draft_on_demand.py` job (every 2 min); neither was ever installed in the live crontab, so
+> they have been removed. `update_tasks.py` (every 15 min) *was* running but undocumented — now listed.
 
 ## Customisation
 

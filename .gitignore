@@ -1,5 +1,6 @@
 # Secrets and credentials — never commit these
 config.yaml
+config.yaml.*          # config.yaml.bak etc. mirror the secret-bearing config
 credentials.json
 token.json
 
@@ -13,6 +14,9 @@ data/weekly-stats.json
 writing-samples/samples/
 writing-samples/curated/*.txt
 writing-samples/curated/*.md
+
+# Local crontab backups — contain the full system crontab (all projects); keep local only
+cron/backups/
 
 # Generated and transient files
 dashboard/index.html

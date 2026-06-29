@@ -114,11 +114,15 @@ bash cron/install.sh
 crontab -l   # verify
 ```
 
-This installs:
-- `06:30` daily — morning briefing
-- Every 2 hrs `08:00–20:00` — urgent check
-- Sunday `02:00` — writing style regeneration
-- Sunday `03:00` — dashboard refresh
+This installs the full pipeline: morning briefing (`06:30`), dashboard (`06:45`), urgent
+check (every 2 hrs `08:00–20:00`), task housekeeping (every 15 min `07:00–23:00`), and weekly
+style regeneration + project discovery (Sunday).
+
+> **⚠️ Summer mode (2026-06-27 → last week of August):** the live crontab has been hand-edited
+> to a reduced, archive-only schedule to cut paid API usage over the break. Do **not** re-run
+> `cron/install.sh` blindly during this period — it would restore the full paid schedule. See
+> the project `CLAUDE.md` (Cron Schedule) for the current state and restore steps, and
+> `cron/backups/` for the pre-change crontab backup.
 
 ---
 

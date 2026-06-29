@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-06-27 — Summer mode (reduced schedule)
+
+After a usage audit, disabled the costly/under-used automations for the summer break
+(restore in the last week of August). Goal: keep the local email archive current and
+queryable while cutting paid API usage to roughly pennies per month.
+
+- **Active cron reduced to one archive-only job:** `fetch_and_triage.py --backfill --hours 4`,
+  every 2h 07:00–21:00. Classifies with Haiku, archives non-noise, regenerates `_index.json`.
+  No briefing email, Telegram, drafts, tasks, or Sonnet.
+- **Disabled (commented out in crontab):** full 06:30 briefing run, `dashboard.py`,
+  `urgent_check.py`, `update_tasks.py`, `--regenerate-style`, `project_discover.py`. Crontab
+  backed up to `cron/backups/crontab-20260627-163944.bak`.
+- **Config flags set to `false`:** `drafts.enabled`, `tasks.enabled`, `alerts.enabled`
+  (`archive.enabled` stays `true`).
+- **Docs updated** to reflect summer mode and to correct pre-existing drift: the `--mini`
+  afternoon runs and `draft_on_demand.py` job were documented but never installed;
+  `update_tasks.py`'s every-15-min job was installed but undocumented.
+- **Restore:** uncomment the six crontab lines, revert the active line to the plain daily
+  `fetch_and_triage.py`, and flip the three config flags back to `true`.
+
 ## 2026-04-02 — Unified Email Archive
 
 Major redesign of the email archiving system. Replaces per-project subdirectories
