@@ -225,9 +225,15 @@ class TaskWriter:
         )
         self._atomic_write(tasks_path, new_content)
 
-        # Update project detail files
+        # Update project detail files (always check existing ones for housekeeping)
+        # First, update projects that have new tasks
         for project_id, proj_tasks in project_tasks.items():
             self._update_project_file(project_id, proj_tasks, detail_dir)
+        
+        # Then, check other project files for housekeeping (moving checked tasks)
+        for project_id in self.projects:
+            if project_id not in project_tasks:
+                self._update_project_file(project_id, [], detail_dir)
 
         return written
 
@@ -320,7 +326,7 @@ class TaskWriter:
                 continue
 
             # Skip indented sub-items of a checked task
-            if skip_indent and stripped and (line.startswith("  ") or line.startswith("\t")):
+            if skip_indent and (not stripped or line.startswith("  ") or line.startswith("\t")):
                 continue
 
             skip_indent = False

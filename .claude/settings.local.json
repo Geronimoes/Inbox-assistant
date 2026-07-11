@@ -47,7 +47,8 @@
       "Bash(xargs -I{} basename {})",
       "Bash(sed -i 's/ai-accessibility-audit/ai-accessibility/g' *.md)",
       "Bash(echo \"✓ Fixed ai-accessibility tag in $\\(grep -l 'ai-accessibility' *.md)",
-      "Bash(xargs -0 sed -i '/^- other$/d' echo \"=== Verify ===\" grep -rh \"^- other$\" *.md)"
+      "Bash(xargs -0 sed -i '/^- other$/d' echo \"=== Verify ===\" grep -rh \"^- other$\" *.md)",
+      "WebFetch(domain:geminicli.com)"
     ],
     "defaultMode": "acceptEdits"
   }
